@@ -14,10 +14,15 @@ class FrameIsdTest : public ::testing::Test {
    protected:
 
       csm::Isd isd;
+      std::string isdstring;
 
    virtual void SetUp() {
-      std::ifstream isdFile("data/simpleFramerISD.json");
-      json jsonIsd = json::parse(isdFile);
+      std::ifstream isdFile("/Users/krodriguez-pr/repos/CSM-CameraModel/tests/data/simpleFramerISD.json");
+      std::stringstream buffer;
+      buffer << isdFile.rdbuf();
+      isdFile.close();
+      isdstring = buffer.str();
+      json jsonIsd = json::parse(buffer.str());
       for (json::iterator it = jsonIsd.begin(); it != jsonIsd.end(); ++it) {
          json jsonValue = it.value();
          if (jsonValue.size() > 1) {
@@ -96,6 +101,7 @@ TEST_F(FrameIsdTest, Constructible) {
 }
 
 TEST_F(FrameIsdTest, ConstructValidCamera) {
+   testing::internal::CaptureStdout();
    UsgsAstroFramePlugin testPlugin;
    csm::Model *cameraModel = NULL;
    EXPECT_NO_THROW(
@@ -104,11 +110,13 @@ TEST_F(FrameIsdTest, ConstructValidCamera) {
                "USGS_ASTRO_FRAME_SENSOR_MODEL",
                NULL)
    );
-   UsgsAstroFrameSensorModel *frameModel = dynamic_cast<UsgsAstroFrameSensorModel *>(cameraModel);
-   EXPECT_NE(frameModel, nullptr);
-   if (cameraModel) {
-      delete cameraModel;
-   }
+   std::string capturedStdout = ::testing::internal::GetCapturedStdout().c_str();
+   EXPECT_STREQ(isdstring.c_str(), capturedStdout.c_str());
+   // UsgsAstroFrameSensorModel *frameModel = dynamic_cast<UsgsAstroFrameSensorModel *>(cameraModel);
+   // EXPECT_NE(frameModel, nullptr);
+   // if (cameraModel) {
+   //    delete cameraModel;
+   // }
 }
 
 TEST_F(FrameIsdTest, ConstructInValidCamera) {
