@@ -1,13 +1,12 @@
 #include "UsgsAstroFramePlugin.h"
 #include "UsgsAstroFrameSensorModel.h"
 
-#include <json.hpp>
-
 #include <sstream>
 #include <fstream>
 
 #include <gtest/gtest.h>
 
+<<<<<<< HEAD:tests/TestyMcTestFace.cpp
 using json = nlohmann::json;
 
 class FrameIsdTest : public ::testing::Test {
@@ -37,6 +36,9 @@ class FrameIsdTest : public ::testing::Test {
       isdFile.close();
    }
 };
+=======
+#include "Fixtures.h"
+>>>>>>> jayupdates:tests/FramePluginTests.cpp
 
 TEST(FramePluginTests, PluginName) {
    UsgsAstroFramePlugin testPlugin;
