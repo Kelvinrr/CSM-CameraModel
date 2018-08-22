@@ -425,6 +425,7 @@ csm::Model *UsgsAstroFramePlugin::constructModelFromISD(const csm::Isd &imageSup
   sensorModel->m_ephemerisTime = atof(imageSupportData.param("center_ephemeris_time").c_str());
   if (imageSupportData.param("center_ephemeris_time") == "") {
     missingKeywords.push_back("center_ephemeris_time");
+<<<<<<< HEAD
   }
 
   sensorModel->m_nLines = atoi(imageSupportData.param("image_lines").c_str());
@@ -438,12 +439,24 @@ csm::Model *UsgsAstroFramePlugin::constructModelFromISD(const csm::Isd &imageSup
 
   if (imageSupportData.param("detector_center") == "") {
     missingKeywords.push_back("detector_center");
+=======
+  }
+
+  sensorModel->m_nLines = atoi(imageSupportData.param("image_lines").c_str());
+  sensorModel->m_nSamples = atoi(imageSupportData.param("image_samples").c_str());
+  if (imageSupportData.param("image_lines") == "") {
+    missingKeywords.push_back("image_lines");
+  }
+  if (imageSupportData.param("image_samples") == "") {
+    missingKeywords.push_back("image_samples");
+>>>>>>> 3590f6aeac9bede7ee4cb34ae73ff3fd7c524a67
   }
   else {
     json jayson = json::parse(imageSupportData.param("detector_center"));
     json sample = jayson.value("sample", json(""));
     json line = jayson.value("line", json(""));
 
+<<<<<<< HEAD
     sensorModel->m_ccdCenter[0] = atof(sample.dump().c_str());
     sensorModel->m_ccdCenter[1] = atof(line.dump().c_str());
 
@@ -481,8 +494,49 @@ csm::Model *UsgsAstroFramePlugin::constructModelFromISD(const csm::Isd &imageSup
   }
   else if (imageSupportData.param("focal2pixel_samples", 2) == "") {
     missingKeywords.push_back("focal2pixel_samples 2");
+=======
+  sensorModel->m_iTransL[0] = atof(imageSupportData.param("focal2pixel_lines", 0).c_str());
+  sensorModel->m_iTransL[1] = atof(imageSupportData.param("focal2pixel_lines", 1).c_str());
+  sensorModel->m_iTransL[2] = atof(imageSupportData.param("focal2pixel_lines", 2).c_str());
+
+
+  if (imageSupportData.param("focal2pixel_lines", 0) == "") {
+    missingKeywords.push_back("focal2pixel_lines 0");
+  }
+  else if (imageSupportData.param("focal2pixel_lines", 1) == "") {
+    missingKeywords.push_back("focal2pixel_lines 1");
+  }
+  else if (imageSupportData.param("focal2pixel_lines", 2) == "") {
+    missingKeywords.push_back("focal2pixel_lines 2");
   }
 
+  sensorModel->m_iTransS[0] = atof(imageSupportData.param("focal2pixel_samples", 0).c_str());
+  sensorModel->m_iTransS[1] = atof(imageSupportData.param("focal2pixel_samples", 1).c_str());
+  sensorModel->m_iTransS[2] = atof(imageSupportData.param("focal2pixel_samples", 2).c_str());
+  if (imageSupportData.param("focal2pixel_samples", 0) == "") {
+    missingKeywords.push_back("focal2pixel_samples 0");
+  }
+  else if (imageSupportData.param("focal2pixel_samples", 1) == "") {
+    missingKeywords.push_back("focal2pixel_samples 1");
+  }
+  else if (imageSupportData.param("focal2pixel_samples", 2) == "") {
+    missingKeywords.push_back("focal2pixel_samples 2");
+  }
+
+  if (imageSupportData.param("radii") == "") {
+    missingKeywords.push_back("radii");
+>>>>>>> 3590f6aeac9bede7ee4cb34ae73ff3fd7c524a67
+  }
+  else {
+    json jayson = json::parse(imageSupportData.param("radii"));
+    json semiminor = jayson.value("semiminor", json(""));
+    json semimajor = jayson.value("semimajor", json(""));
+    json unit = jayson.value("unit", json(""));
+
+    sensorModel->m_minorAxis = atof(semiminor.dump().c_str());
+    sensorModel->m_majorAxis = atof(semimajor.dump().c_str());
+
+<<<<<<< HEAD
   if (imageSupportData.param("radii") == "") {
     missingKeywords.push_back("radii");
   }
@@ -520,6 +574,33 @@ csm::Model *UsgsAstroFramePlugin::constructModelFromISD(const csm::Isd &imageSup
     json minheight = reference_height.value("minheight", json(""));
     json unit = reference_height.value("unit", json(""));
 
+=======
+    if (semiminor == json("")) {
+      missingKeywords.push_back("radii semiminor");
+    }
+    if (semimajor == json("")) {
+      missingKeywords.push_back("radii semimajor");
+    }
+    if (unit == json("")) {
+      missingKeywords.push_back("radii unit");
+    }
+    else {
+      unit = unit.get<std::string>();
+      sensorModel->m_minorAxis = metric_conversion(sensorModel->m_minorAxis, unit);
+      sensorModel->m_majorAxis = metric_conversion(sensorModel->m_majorAxis, unit);
+    }
+  }
+
+  if (imageSupportData.param("reference_height") == "") {
+    missingKeywords.push_back("reference_height");
+  }
+  else {
+    json reference_height = json::parse(imageSupportData.param("reference_height"));
+    json maxheight = reference_height.value("maxheight", json(""));
+    json minheight = reference_height.value("minheight", json(""));
+    json unit = reference_height.value("unit", json(""));
+
+>>>>>>> 3590f6aeac9bede7ee4cb34ae73ff3fd7c524a67
     sensorModel->m_minElevation = atof(minheight.dump().c_str());
     sensorModel->m_maxElevation = atof(maxheight.dump().c_str());
 
