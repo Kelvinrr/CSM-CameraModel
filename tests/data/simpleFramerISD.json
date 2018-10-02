@@ -17,8 +17,8 @@
 	},
 	"radii": {
 		"semimajor": 0.01,
-        "semiminor": 0.01,
-        "unit":"m"
+    "semiminor": 0.01,
+    "unit":"m"
 	},
 	"reference_height": {
 		"maxheight": 1,
