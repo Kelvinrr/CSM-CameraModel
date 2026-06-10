@@ -2475,6 +2475,116 @@ double getWavelength(json isd, csm::WarningList *list) {
 }
 
 /**
+ * @brief Extracts the number of spectral bands from ISD JSON.
+ *
+ * @param isd The JSON object containing the ISD data.
+ * @param list Optional pointer to a WarningList for logging warnings.
+ *
+ * @return The number of bands as an integer. Defaults to 1 if not found (backward compatible).
+ */
+int getNumBands(json isd, csm::WarningList *list) {
+  int num_bands = 1;  // Default to 1 for backward compatibility
+  try {
+    num_bands = isd.at("num_bands");
+  } catch (...) {
+    // Single-band imagery, no warning needed
+  }
+  return num_bands;
+}
+
+/**
+ * @brief Extracts band center wavelengths from ISD JSON.
+ *
+ * @param isd The JSON object containing the ISD data.
+ * @param list Optional pointer to a WarningList for logging warnings.
+ *
+ * @return Vector of center wavelengths (nm) per band. Empty if not found.
+ */
+std::vector<double> getBandWavelengths(json isd, csm::WarningList *list) {
+  std::vector<double> wavelengths;
+  try {
+    json wavelength_array = isd.at("band_wavelengths");
+    wavelengths = wavelength_array.get<std::vector<double>>();
+  } catch (...) {
+    if (list) {
+      list->push_back(csm::Warning(csm::Warning::DATA_NOT_AVAILABLE,
+                                   "No band_wavelengths in ISD",
+                                   "Utilities::getBandWavelengths()"));
+    }
+  }
+  return wavelengths;
+}
+
+/**
+ * @brief Extracts band widths (FWHM) from ISD JSON.
+ *
+ * @param isd The JSON object containing the ISD data.
+ * @param list Optional pointer to a WarningList for logging warnings.
+ *
+ * @return Vector of band widths (nm FWHM) per band. Empty if not found.
+ */
+std::vector<double> getBandWidths(json isd, csm::WarningList *list) {
+  std::vector<double> widths;
+  try {
+    json width_array = isd.at("band_widths");
+    widths = width_array.get<std::vector<double>>();
+  } catch (...) {
+    if (list) {
+      list->push_back(csm::Warning(csm::Warning::DATA_NOT_AVAILABLE,
+                                   "No band_widths in ISD",
+                                   "Utilities::getBandWidths()"));
+    }
+  }
+  return widths;
+}
+
+/**
+ * @brief Extracts band detector offsets from ISD JSON.
+ *
+ * @param isd The JSON object containing the ISD data.
+ * @param list Optional pointer to a WarningList for logging warnings.
+ *
+ * @return Vector of detector sample offsets (pixels) per band. Empty if not found.
+ */
+std::vector<double> getBandDetectorOffsets(json isd, csm::WarningList *list) {
+  std::vector<double> offsets;
+  try {
+    json offset_array = isd.at("band_detector_offsets");
+    offsets = offset_array.get<std::vector<double>>();
+  } catch (...) {
+    if (list) {
+      list->push_back(csm::Warning(csm::Warning::DATA_NOT_AVAILABLE,
+                                   "No band_detector_offsets in ISD",
+                                   "Utilities::getBandDetectorOffsets()"));
+    }
+  }
+  return offsets;
+}
+
+/**
+ * @brief Extracts band focal length offsets from ISD JSON.
+ *
+ * @param isd The JSON object containing the ISD data.
+ * @param list Optional pointer to a WarningList for logging warnings.
+ *
+ * @return Vector of focal length adjustments (mm) per band. Empty if not found.
+ */
+std::vector<double> getBandFocalLengthOffsets(json isd, csm::WarningList *list) {
+  std::vector<double> offsets;
+  try {
+    json offset_array = isd.at("band_focal_length_offsets");
+    offsets = offset_array.get<std::vector<double>>();
+  } catch (...) {
+    if (list) {
+      list->push_back(csm::Warning(csm::Warning::DATA_NOT_AVAILABLE,
+                                   "No band_focal_length_offsets in ISD",
+                                   "Utilities::getBandFocalLengthOffsets()"));
+    }
+  }
+  return offsets;
+}
+
+/**
  * @description Converts a model state string into a JSON object. This function 
  * first sanitizes the input string by removing non-printable characters and 
  * then parses the string from the first occurrence of "{" to the last 

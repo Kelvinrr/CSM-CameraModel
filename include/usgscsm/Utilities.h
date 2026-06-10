@@ -193,6 +193,14 @@ std::vector<double> getSensorVelocities(nlohmann::json isd,
 std::vector<double> getSensorOrientations(nlohmann::json isd,
                                           csm::WarningList *list = nullptr);
 double getWavelength(nlohmann::json isd, csm::WarningList *list = nullptr);
+
+// Hyperspectral support
+int getNumBands(nlohmann::json isd, csm::WarningList *list = nullptr);
+std::vector<double> getBandWavelengths(nlohmann::json isd, csm::WarningList *list = nullptr);
+std::vector<double> getBandWidths(nlohmann::json isd, csm::WarningList *list = nullptr);
+std::vector<double> getBandDetectorOffsets(nlohmann::json isd, csm::WarningList *list = nullptr);
+std::vector<double> getBandFocalLengthOffsets(nlohmann::json isd, csm::WarningList *list = nullptr);
+
 nlohmann::json stateAsJson(std::string modelState);
 
 VariantMap variantMapFromJson(const nlohmann::json& j);

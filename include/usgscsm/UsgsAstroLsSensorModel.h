@@ -97,6 +97,13 @@ class UsgsAstroLsSensorModel : public csm::RasterGM,
   double m_iTransL[3];
   double m_detectorSampleOrigin;
   double m_detectorLineOrigin;
+
+  // Hyperspectral support (optional, backward-compatible)
+  int m_numBands;                              // Number of spectral bands (default: 1)
+  std::vector<double> m_bandWavelengths;       // Center wavelength per band (nm)
+  std::vector<double> m_bandWidths;            // FWHM per band (nm)
+  std::vector<double> m_bandDetectorOffsets;   // Detector sample offset per band (pixels)
+  std::vector<double> m_bandFocalLengthOffsets; // Focal length adjustment per band (mm)
   double m_mountingMatrix[9];
   double m_majorAxis;
   double m_minorAxis;
@@ -894,6 +901,31 @@ class UsgsAstroLsSensorModel : public csm::RasterGM,
   //  lagrange interpolation.  If one sun position and at least one sun velocity
   //  are available, then the position is calculated using linear extrapolation.
   //  If only one sun position is available, then that value is returned.
+
+  //---
+  // Hyperspectral Support - USGSCSM Extensions (NOT part of CSM API)
+  //---
+
+  // Spectral metadata accessors
+  int getNumBands() const { return m_numBands; }
+  double getBandWavelength(int band) const;
+  double getBandWidth(int band) const;
+  double getBandDetectorOffset(int band) const;
+  double getBandFocalLengthOffset(int band) const;
+  const std::vector<double>& getAllWavelengths() const { return m_bandWavelengths; }
+  const std::vector<double>& getAllBandWidths() const { return m_bandWidths; }
+
+  // Band-aware photogrammetry methods
+  csm::ImageCoord groundToImageBand(const csm::EcefCoord& groundPt, int band,
+                                     double desiredPrecision = 0.001,
+                                     double* achievedPrecision = NULL,
+                                     csm::WarningList* warnings = NULL) const;
+
+  csm::EcefCoord imageToGroundBand(const csm::ImageCoord& imagePt, int band,
+                                    double height,
+                                    double desiredPrecision = 0.001,
+                                    double* achievedPrecision = NULL,
+                                    csm::WarningList* warnings = NULL) const;
 
  private:
   void determineSensorCovarianceInImageSpace(csm::EcefCoord& gp,
