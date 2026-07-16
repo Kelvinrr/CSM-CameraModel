@@ -44,7 +44,8 @@ export type ModelName =
   | 'USGS_ASTRO_FRAME_SENSOR_MODEL'
   | 'USGS_ASTRO_LINE_SCANNER_SENSOR_MODEL'
   | 'USGS_ASTRO_PUSH_FRAME_SENSOR_MODEL'
-  | 'USGS_ASTRO_SAR_SENSOR_MODEL';
+  | 'USGS_ASTRO_SAR_SENSOR_MODEL'
+  | 'USGS_ASTRO_PROJECTED_SENSOR_MODEL';
 
 /**
  * USGSCSM sensor model wrapper class
@@ -109,6 +110,61 @@ export class USGSCSMModel {
    * ```
    */
   loadFromState(stateJson: string): boolean;
+
+  /**
+   * Load a sensor model from a raw byte buffer, auto-detecting the format.
+   *
+   * The format is detected from the leading bytes:
+   * - `"STARDS"` magic  → STARDS binary model state
+   * - msgpack map byte  → binary msgpack model state
+   * - `'{'`             → JSON ISD, or a JSON/`.sup` model state
+   *
+   * Use this when you already have the file content in memory (e.g. from a
+   * `fetch`, a `File`/`Blob`, or `fs.readFileSync`). For a URL, prefer
+   * {@link loadFromURL} / {@link loadFrom}, which fetch and then call this.
+   *
+   * @param bytes - File content as a Uint8Array
+   * @returns true if a model was loaded
+   *
+   * @example
+   * ```typescript
+   * const buf = await fetch('model.stards').then(r => r.arrayBuffer());
+   * model.loadFromBytes(new Uint8Array(buf));
+   * ```
+   */
+  loadFromBytes(bytes: Uint8Array): boolean;
+
+  /**
+   * Fetch a model file from a URL and load it, auto-detecting the format.
+   *
+   * The network request is performed with the browser/Node `fetch` API, so it
+   * is subject to CORS and the host's security model. The source may be a bare
+   * `http(s)://` URL or a GDAL-style `"/vsicurl/<url>"` path (the `/vsicurl/`
+   * prefix is stripped before fetching). For S3, pass a normal https URL such as
+   * a presigned URL rather than a `/vsis3/` path.
+   *
+   * @param source - An `http(s)://` URL or a `"/vsicurl/<url>"` path
+   * @returns a Promise resolving to true if a model was loaded
+   *
+   * @example
+   * ```typescript
+   * await model.loadFromURL('https://host/model.json');
+   * await model.loadFromURL('/vsicurl/https://host/model.stards');
+   * ```
+   */
+  loadFromURL(source: string): Promise<boolean>;
+
+  /**
+   * Load a model from a URL/`/vsicurl/` source, a Uint8Array, or an ArrayBuffer.
+   *
+   * A unified async entry point: URL-like strings are fetched (see
+   * {@link loadFromURL}); in-memory buffers are decoded directly. Always returns
+   * a Promise for a uniform API.
+   *
+   * @param source - A URL string, `"/vsicurl/<url>"` path, Uint8Array, or ArrayBuffer
+   * @returns a Promise resolving to true if a model was loaded
+   */
+  loadFrom(source: string | Uint8Array | ArrayBuffer): Promise<boolean>;
 
   /**
    * Get the current model state as JSON string

@@ -27,9 +27,7 @@ OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
 
 #include "UsgsAstroFrameSensorModel.h"
 #include "UsgsAstroLsSensorModel.h"
-#ifndef __EMSCRIPTEN__
 #include "UsgsAstroProjectedSensorModel.h"
-#endif
 #include "UsgsAstroPushFrameSensorModel.h"
 #include "UsgsAstroSarSensorModel.h"
 
@@ -62,11 +60,7 @@ using json = nlohmann::json;
 const std::string UsgsAstroPlugin::_PLUGIN_NAME = "UsgsAstroPluginCSM";
 const std::string UsgsAstroPlugin::_MANUFACTURER_NAME = "UsgsAstrogeology";
 const std::string UsgsAstroPlugin::_RELEASE_DATE = "20190222";
-#ifdef __EMSCRIPTEN__
-const int UsgsAstroPlugin::_N_SENSOR_MODELS = 4;  // Excluding projected model for WASM
-#else
 const int UsgsAstroPlugin::_N_SENSOR_MODELS = 5;
-#endif
 
 // Static Instance of itself
 const UsgsAstroPlugin UsgsAstroPlugin::m_registeredPlugin;
@@ -159,9 +153,7 @@ std::string UsgsAstroPlugin::getModelName(size_t modelIndex) const {
   std::vector<std::string> supportedModelNames = {
       UsgsAstroFrameSensorModel::_SENSOR_MODEL_NAME,
       UsgsAstroLsSensorModel::_SENSOR_MODEL_NAME,
-#ifndef __EMSCRIPTEN__
       UsgsAstroProjectedSensorModel::_SENSOR_MODEL_NAME,
-#endif
       UsgsAstroSarSensorModel::_SENSOR_MODEL_NAME,
       UsgsAstroPushFrameSensorModel::_SENSOR_MODEL_NAME};
   LOG_DEBUG( "Get Model Name: {}. Used index: {}",
@@ -489,9 +481,18 @@ csm::Model *UsgsAstroPlugin::constructModelFromISD(
     const csm::Isd &imageSupportDataOriginal, const std::string &modelName,
     csm::WarningList *warnings) const {
   LOG_INFO( "Running constructModelFromISD");
+
+#ifdef USGSCSM_ENABLE_STARDS
+  // A STARDS input file holds a CSM model *state* (keys 1-to-1 with CSM state),
+  // not an ISD. Build directly from it, skipping the JSON ISD pipeline.
+  if (isStardsFile(imageSupportDataOriginal.filename())) {
+    LOG_DEBUG( "Constructing model from STARDS state file");
+    return getUsgsCsmModelFromStards(imageSupportDataOriginal.filename(), warnings);
+  }
+#endif
+
   std::string stringIsd = loadImageSupportData(imageSupportDataOriginal);
   LOG_TRACE( "ISD string: {}", stringIsd);
-#ifndef __EMSCRIPTEN__
   // Try to get the projected model, if not return the the unprojected model
   UsgsAstroProjectedSensorModel *projModel = new UsgsAstroProjectedSensorModel();
 
@@ -512,7 +513,6 @@ csm::Model *UsgsAstroPlugin::constructModelFromISD(
     aMessage += "]";
     LOG_ERROR( aMessage);
   }
-#endif
 
   csm::Model *model = getUsgsCsmModelFromIsd(stringIsd, modelName, warnings);
   return model;

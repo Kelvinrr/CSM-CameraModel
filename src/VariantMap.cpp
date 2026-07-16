@@ -11,7 +11,8 @@ using VariantValue = std::variant<
   double,
   bool,
   std::vector<double>,
-  std::vector<int>
+  std::vector<int>,
+  std::vector<std::string>
 >;
 
 class VariantMapImpl {
@@ -94,6 +95,12 @@ void VariantMap::set<std::vector<int>>(const std::string& key,
   impl_->data[key] = value;
 }
 
+template<>
+void VariantMap::set<std::vector<std::string>>(const std::string& key,
+                                               const std::vector<std::string>& value) {
+  impl_->data[key] = value;
+}
+
 // Generate get<T>() specializations with error checking
 VARIANT_MAP_GET(std::string, "string")
 VARIANT_MAP_GET(bool, "bool")
@@ -156,6 +163,15 @@ std::vector<int> VariantMap::get<std::vector<int>>(const std::string& key) const
       }
       return ints;
     } catch (const std::exception&) {
+      // A scalar stored for a vector-typed key (e.g. a size-1 array coming from
+      // a STARDS file, where a 1-element array is indistinguishable from a
+      // scalar) is treated as a single-element vector.
+      try {
+        return std::vector<int>{std::get<int>(it->second)};
+      } catch (const std::exception&) {}
+      try {
+        return std::vector<int>{static_cast<int>(std::get<double>(it->second))};
+      } catch (const std::exception&) {}
       throw VariantMapTypeError("Bad variant access for key '" + key + "': expected numeric vector type (vector<int> or vector<double>) but got different type");
     }
   }
@@ -181,16 +197,29 @@ std::vector<double> VariantMap::get<std::vector<double>>(const std::string& key)
       }
       return doubles;
     } catch (const std::exception&) {
+      // A scalar stored for a vector-typed key (e.g. a size-1 array coming from
+      // a STARDS file, where a 1-element array is indistinguishable from a
+      // scalar) is treated as a single-element vector.
+      try {
+        return std::vector<double>{std::get<double>(it->second)};
+      } catch (const std::exception&) {}
+      try {
+        return std::vector<double>{static_cast<double>(std::get<int>(it->second))};
+      } catch (const std::exception&) {}
       throw VariantMapTypeError("Bad variant access for key '" + key + "': expected numeric vector type (vector<int> or vector<double>) but got different type");
     }
   }
 }
+
+// vector<string> - no cross-type coercion (used to carry nested model states)
+VARIANT_MAP_GET(std::vector<std::string>, "vector<string>")
 
 // Generate get<T>(key, default) specializations with error checking
 VARIANT_MAP_GET_DEFAULT(std::string, "string")
 VARIANT_MAP_GET_DEFAULT(bool, "bool")
 VARIANT_MAP_GET_DEFAULT(std::vector<double>, "vector<double>")
 VARIANT_MAP_GET_DEFAULT(std::vector<int>, "vector<int>")
+VARIANT_MAP_GET_DEFAULT(std::vector<std::string>, "vector<string>")
 
 // Special handling for int with default - can retrieve int or double and cast
 template<>
@@ -235,6 +264,7 @@ static VariantMap::ValueType indexToValueType(size_t idx) {
     case 3: return VariantMap::ValueType::Bool;
     case 4: return VariantMap::ValueType::VectorDouble;
     case 5: return VariantMap::ValueType::VectorInt;
+    case 6: return VariantMap::ValueType::VectorString;
     default: return VariantMap::ValueType::Unknown;
   }
 }
@@ -302,6 +332,9 @@ std::string VariantMap::dumps() const {
           oss << val[i];
         }
         oss << "] (vector<int>, size=" << val.size() << ")";
+      },
+      [&oss](const std::vector<std::string>& val) {
+        oss << "[" << val.size() << " entries] (vector<string>)";
       }
     }, pair.second);
 

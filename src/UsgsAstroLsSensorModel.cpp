@@ -113,11 +113,6 @@ const std::string UsgsAstroLsSensorModel::_STATE_KEYWORD[] = {
     "m_halfSwath",
     "m_halfTime",
     "m_covariance",
-    "m_numBands",
-    "m_bandWavelengths",
-    "m_bandWidths",
-    "m_bandDetectorOffsets",
-    "m_bandFocalLengthOffsets",
 };
 
 const int UsgsAstroLsSensorModel::NUM_PARAM_TYPES = 4;
@@ -282,21 +277,6 @@ void UsgsAstroLsSensorModel::populateModel(const VariantMap& state) {
     for (size_t i = 0; i < paramTypeInts.size(); ++i) {
       m_parameterType[i] = static_cast<csm::param::Type>(paramTypeInts[i]);
     }
-  }
-
-  // Load hyperspectral metadata (optional, backward-compatible)
-  m_numBands = state.get<int>("m_numBands", 1);  // Default to 1
-  if (state.contains("m_bandWavelengths")) {
-    m_bandWavelengths = state.get<std::vector<double>>("m_bandWavelengths");
-  }
-  if (state.contains("m_bandWidths")) {
-    m_bandWidths = state.get<std::vector<double>>("m_bandWidths");
-  }
-  if (state.contains("m_bandDetectorOffsets")) {
-    m_bandDetectorOffsets = state.get<std::vector<double>>("m_bandDetectorOffsets");
-  }
-  if (state.contains("m_bandFocalLengthOffsets")) {
-    m_bandFocalLengthOffsets = state.get<std::vector<double>>("m_bandFocalLengthOffsets");
   }
 
   // If computed state values are still default, then compute them
@@ -490,29 +470,6 @@ VariantMap UsgsAstroLsSensorModel::getModelMap() const {
   state.set<std::vector<double>>("m_sunVelocity", m_sunVelocity);
   LOG_TRACE( "num sun velocities: {} ", m_sunVelocity.size());
 
-  // Serialize hyperspectral metadata (optional)
-  state.set<int>("m_numBands", m_numBands);
-  if (!m_bandWavelengths.empty()) {
-    state.set<std::vector<double>>("m_bandWavelengths", m_bandWavelengths);
-  }
-  if (!m_bandWidths.empty()) {
-    state.set<std::vector<double>>("m_bandWidths", m_bandWidths);
-  }
-  if (!m_bandDetectorOffsets.empty()) {
-    state.set<std::vector<double>>("m_bandDetectorOffsets", m_bandDetectorOffsets);
-  }
-  if (!m_bandFocalLengthOffsets.empty()) {
-    state.set<std::vector<double>>("m_bandFocalLengthOffsets", m_bandFocalLengthOffsets);
-  }
-  LOG_TRACE(
-      "m_numBands: {} "
-      "band wavelengths count: {} "
-      "band widths count: {} "
-      "band detector offsets count: {} "
-      "band focal length offsets count: {} ",
-      m_numBands, m_bandWavelengths.size(), m_bandWidths.size(),
-      m_bandDetectorOffsets.size(), m_bandFocalLengthOffsets.size());
-
   return state;
 }
 
@@ -651,13 +608,6 @@ void UsgsAstroLsSensorModel::reset() {
 
   m_covariance =
       std::vector<double>(NUM_PARAMETERS * NUM_PARAMETERS, 0.0);  // 52
-
-  // Hyperspectral support defaults
-  m_numBands = 1;
-  m_bandWavelengths.clear();
-  m_bandWidths.clear();
-  m_bandDetectorOffsets.clear();
-  m_bandFocalLengthOffsets.clear();
 }
 
 /**
@@ -3176,8 +3126,12 @@ VariantMap UsgsAstroLsSensorModel::constructStateFromIsd(
       "m_maxElevation: {}",
       state["m_minElevation"].dump(), state["m_maxElevation"].dump());
 
-  // Default parameter types to REAL
-  state["m_parameterType"] = std::vector<std::string>(NUM_PARAMETERS, "REAL");
+  // Default parameter types to REAL. Stored as ints to match populateModel and
+  // getModelMap, which read/write m_parameterType as a vector<int> of enum
+  // values. (Previously written as strings, which variantMapFromJson silently
+  // dropped, leaving the reset() default in place.)
+  state["m_parameterType"] =
+      std::vector<int>(NUM_PARAMETERS, static_cast<int>(csm::param::REAL));
 
   // Default to identity covariance
   state["m_covariance"] =
@@ -3185,21 +3139,6 @@ VariantMap UsgsAstroLsSensorModel::constructStateFromIsd(
   for (int i = 0; i < NUM_PARAMETERS; i++) {
     state["m_covariance"][i * NUM_PARAMETERS + i] = 1.0;
   }
-
-  // Parse hyperspectral metadata (optional, backward-compatible)
-  state["m_numBands"] = getNumBands(jsonIsd, parsingWarnings);
-  state["m_bandWavelengths"] = getBandWavelengths(jsonIsd, parsingWarnings);
-  state["m_bandWidths"] = getBandWidths(jsonIsd, parsingWarnings);
-  state["m_bandDetectorOffsets"] = getBandDetectorOffsets(jsonIsd, parsingWarnings);
-  state["m_bandFocalLengthOffsets"] = getBandFocalLengthOffsets(jsonIsd, parsingWarnings);
-  LOG_TRACE(
-      "m_numBands: {}, m_bandWavelengths size: {}, m_bandWidths size: {}, "
-      "m_bandDetectorOffsets size: {}, m_bandFocalLengthOffsets size: {}",
-      state["m_numBands"].dump(),
-      state["m_bandWavelengths"].size(),
-      state["m_bandWidths"].size(),
-      state["m_bandDetectorOffsets"].size(),
-      state["m_bandFocalLengthOffsets"].size());
 
   if (!parsingWarnings->empty()) {
     if (warnings) {
@@ -3293,161 +3232,5 @@ double UsgsAstroLsSensorModel::calcDetectorLineErr(double t, csm::ImageCoord con
   detectorLine /= m_detectorLineSumming;
 
   return detectorLine;
-}
-
-//---
-// Hyperspectral Support - Accessor Methods
-//---
-
-/**
- * @brief Gets the center wavelength for a specific band.
- * @param band Band index (0-based)
- * @return Center wavelength in nanometers
- * @throws csm::Error if band index is out of range
- */
-double UsgsAstroLsSensorModel::getBandWavelength(int band) const {
-  if (band < 0 || band >= m_numBands) {
-    throw csm::Error(csm::Error::INDEX_OUT_OF_RANGE,
-                     "Band index out of range",
-                     "UsgsAstroLsSensorModel::getBandWavelength");
-  }
-  if (band >= static_cast<int>(m_bandWavelengths.size())) {
-    return 0.0;  // Wavelength not specified for this band
-  }
-  return m_bandWavelengths[band];
-}
-
-/**
- * @brief Gets the band width (FWHM) for a specific band.
- * @param band Band index (0-based)
- * @return Band width in nanometers
- * @throws csm::Error if band index is out of range
- */
-double UsgsAstroLsSensorModel::getBandWidth(int band) const {
-  if (band < 0 || band >= m_numBands) {
-    throw csm::Error(csm::Error::INDEX_OUT_OF_RANGE,
-                     "Band index out of range",
-                     "UsgsAstroLsSensorModel::getBandWidth");
-  }
-  if (band >= static_cast<int>(m_bandWidths.size())) {
-    return 0.0;  // Width not specified for this band
-  }
-  return m_bandWidths[band];
-}
-
-/**
- * @brief Gets the detector sample offset for a specific band.
- * @param band Band index (0-based)
- * @return Detector offset in pixels
- * @throws csm::Error if band index is out of range
- */
-double UsgsAstroLsSensorModel::getBandDetectorOffset(int band) const {
-  if (band < 0 || band >= m_numBands) {
-    throw csm::Error(csm::Error::INDEX_OUT_OF_RANGE,
-                     "Band index out of range",
-                     "UsgsAstroLsSensorModel::getBandDetectorOffset");
-  }
-  if (band >= static_cast<int>(m_bandDetectorOffsets.size())) {
-    return 0.0;  // Offset not specified, assume zero
-  }
-  return m_bandDetectorOffsets[band];
-}
-
-/**
- * @brief Gets the focal length adjustment for a specific band.
- * @param band Band index (0-based)
- * @return Focal length offset in millimeters
- * @throws csm::Error if band index is out of range
- */
-double UsgsAstroLsSensorModel::getBandFocalLengthOffset(int band) const {
-  if (band < 0 || band >= m_numBands) {
-    throw csm::Error(csm::Error::INDEX_OUT_OF_RANGE,
-                     "Band index out of range",
-                     "UsgsAstroLsSensorModel::getBandFocalLengthOffset");
-  }
-  if (band >= static_cast<int>(m_bandFocalLengthOffsets.size())) {
-    return 0.0;  // Offset not specified, assume zero
-  }
-  return m_bandFocalLengthOffsets[band];
-}
-
-/**
- * @brief Band-aware ground-to-image transformation.
- * @description Converts ground coordinates to image coordinates for a specific spectral band,
- * accounting for band-dependent detector offsets and focal length adjustments.
- *
- * @param groundPt Ground point in ECEF coordinates
- * @param band Band index (0-based)
- * @param desiredPrecision Desired precision in meters
- * @param achievedPrecision Output actual precision achieved
- * @param warnings Optional warning list
- * @return Image coordinate (line, sample)
- */
-csm::ImageCoord UsgsAstroLsSensorModel::groundToImageBand(
-    const csm::EcefCoord& groundPt, int band,
-    double desiredPrecision,
-    double* achievedPrecision,
-    csm::WarningList* warnings) const {
-
-  if (band < 0 || band >= m_numBands) {
-    throw csm::Error(csm::Error::INDEX_OUT_OF_RANGE,
-                     "Band index out of range",
-                     "UsgsAstroLsSensorModel::groundToImageBand");
-  }
-
-  // For now, use the base implementation with band 0
-  // TODO: Implement band-specific geometry when internal methods support band parameter
-  if (band == 0) {
-    return groundToImage(groundPt, desiredPrecision, achievedPrecision, warnings);
-  }
-
-  // For other bands, call base method and apply detector offset
-  csm::ImageCoord img = groundToImage(groundPt, desiredPrecision, achievedPrecision, warnings);
-
-  // Apply band detector offset
-  double offset = getBandDetectorOffset(band);
-  img.samp += offset;
-
-  return img;
-}
-
-/**
- * @brief Band-aware image-to-ground transformation.
- * @description Converts image coordinates for a specific spectral band to ground coordinates,
- * accounting for band-dependent detector offsets and focal length adjustments.
- *
- * @param imagePt Image coordinate (line, sample)
- * @param band Band index (0-based)
- * @param height Height above ellipsoid in meters
- * @param desiredPrecision Desired precision in meters
- * @param achievedPrecision Output actual precision achieved
- * @param warnings Optional warning list
- * @return Ground point in ECEF coordinates
- */
-csm::EcefCoord UsgsAstroLsSensorModel::imageToGroundBand(
-    const csm::ImageCoord& imagePt, int band,
-    double height,
-    double desiredPrecision,
-    double* achievedPrecision,
-    csm::WarningList* warnings) const {
-
-  if (band < 0 || band >= m_numBands) {
-    throw csm::Error(csm::Error::INDEX_OUT_OF_RANGE,
-                     "Band index out of range",
-                     "UsgsAstroLsSensorModel::imageToGroundBand");
-  }
-
-  // For now, use the base implementation with band 0
-  // TODO: Implement band-specific geometry when internal methods support band parameter
-  if (band == 0) {
-    return imageToGround(imagePt, height, desiredPrecision, achievedPrecision, warnings);
-  }
-
-  // For other bands, remove detector offset before calling base method
-  csm::ImageCoord adjustedPt = imagePt;
-  double offset = getBandDetectorOffset(band);
-  adjustedPt.samp -= offset;
-
-  return imageToGround(adjustedPt, height, desiredPrecision, achievedPrecision, warnings);
 }
 

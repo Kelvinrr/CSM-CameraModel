@@ -14,6 +14,8 @@
 #include <Error.h>
 #include <nlohmann/json.hpp>
 
+#include <cstdio>
+#include <fstream>
 #include <iostream>
 #include <memory>
 #include <string>
@@ -137,6 +139,88 @@ public:
       std::string msg = "Unknown exception in loadModelFromState";
       std::cerr << msg << std::endl;
 
+      throw std::runtime_error(msg);
+      return false;  // Never reached
+    }
+  }
+
+  /**
+   * Load a sensor model from a raw byte buffer, auto-detecting the format.
+   *
+   * This is the entry point the JS fetch helpers use after downloading a file:
+   * the network layer lives in JavaScript (see the loadFromURL wrapper added in
+   * the module's post-js), and the downloaded bytes are handed here. The format
+   * is detected from the leading bytes, mirroring how the native usgscsm_cam_test
+   * tool sniffs an input file:
+   *   - "STARDS" magic  -> STARDS binary model state
+   *   - msgpack map byte -> binary msgpack model state
+   *   - '{'             -> JSON: an ISD if it has ISD keys, else a model state
+   *
+   * @param bytes A JavaScript Uint8Array (or other typed array) of file content.
+   * @return true if a model was loaded.
+   */
+  bool loadModelFromBytes(val bytes) {
+    // Copy the JS typed array into a std::string (byte buffer).
+    const size_t length = bytes["length"].as<size_t>();
+    std::string data;
+    data.resize(length);
+    if (length > 0) {
+      // Copy bytes from the JS heap into our string via a memory view.
+      val heap = val::module_property("HEAPU8");
+      val memView = val(typed_memory_view(length,
+                                          reinterpret_cast<uint8_t*>(&data[0])));
+      memView.call<void>("set", bytes);
+    }
+
+    try {
+#ifdef USGSCSM_ENABLE_STARDS
+      // STARDS files begin with the ASCII magic "STARDS". STARDS reads from a
+      // path, so stage the bytes in the in-memory filesystem and load from there.
+      if (data.size() >= 6 && data.compare(0, 6, "STARDS") == 0) {
+        const std::string tmpPath = "/tmp/usgscsm_load.stards";
+        {
+          std::ofstream ofs(tmpPath, std::ios::binary);
+          ofs.write(data.data(), static_cast<std::streamsize>(data.size()));
+        }
+        csm::RasterGM* raster = getUsgsCsmModelFromStards(tmpPath, nullptr);
+        std::remove(tmpPath.c_str());
+        if (!raster) return false;
+        model = std::shared_ptr<csm::RasterGM>(raster);
+        return true;
+      }
+#endif
+
+      // msgpack model state: a map is 0x80-0x8F (fixmap), 0xDE (map16), 0xDF (map32).
+      if (!data.empty()) {
+        const unsigned char b0 = static_cast<unsigned char>(data[0]);
+        if ((b0 >= 0x80 && b0 <= 0x8F) || b0 == 0xDE || b0 == 0xDF) {
+          const char* ptr = data.data();
+          json j = json::from_msgpack(ptr, ptr + data.size());
+          std::string modelName = j.at("m_modelName").get<std::string>();
+          csm::RasterGM* raster =
+              getUsgsCsmModelFromJsonState(j.dump(), modelName, nullptr);
+          if (!raster) return false;
+          model = std::shared_ptr<csm::RasterGM>(raster);
+          return true;
+        }
+      }
+
+      // Otherwise treat as text: a JSON ISD or a JSON/.sup model state.
+      std::string modelName;
+      if (isUsgsCsmIsd(data, modelName)) {
+        return loadModelFromISD(data, modelName);
+      }
+      if (isUsgsCsmState(data, modelName)) {
+        return loadModelFromState(data);
+      }
+
+      std::cerr << "loadFromBytes: unrecognized file format" << std::endl;
+      return false;
+
+    } catch (const std::exception& e) {
+      std::string msg = "loadFromBytes error: ";
+      msg += e.what();
+      std::cerr << msg << std::endl;
       throw std::runtime_error(msg);
       return false;  // Never reached
     }
@@ -517,6 +601,7 @@ EMSCRIPTEN_BINDINGS(usgscsm) {
     .constructor<>()
     .function("loadFromISD", &USGSCSMWrapper::loadModelFromISD)
     .function("loadFromState", &USGSCSMWrapper::loadModelFromState)
+    .function("loadFromBytes", &USGSCSMWrapper::loadModelFromBytes)
     .function("getModelState", &USGSCSMWrapper::getModelState)
     .function("imageToGround", &USGSCSMWrapper::imageToGround)
     .function("groundToImage", &USGSCSMWrapper::groundToImage)

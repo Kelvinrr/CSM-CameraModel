@@ -2,14 +2,20 @@
 	path = gtest
 	url = https://github.com/google/googletest
 [submodule "csm"]
-	path = csm
+	path = external/csm
 	url = https://github.com/USGS-Astrogeology/csm
 [submodule "ale"]
-	path = ale
+	path = external/ale
 	url = git@github.com:DOI-USGS/ale.git
 [submodule "json"]
-	path = json
+	path = external/json
 	url = https://github.com/nlohmann/json.git
 [submodule "PROJ"]
-	path = PROJ
+	path = external/PROJ
 	url = https://github.com/OSGeo/PROJ
+[submodule "external/sqlite3/upstream"]
+	path = external/sqlite3/upstream
+	url = https://github.com/azadkuh/sqlite-amalgamation.git
+[submodule "external/StarDS"]
+	path = external/StarDS
+	url = git@github.com:DOI-USGS/StarDS.git

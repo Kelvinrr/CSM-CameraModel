@@ -13,6 +13,10 @@
 #include <emscripten.h>
 #endif
 
+#ifdef USGSCSM_ENABLE_STARDS
+#include "stards.h"
+#endif
+
 #include "ale/Distortion.h"
 
 using json = nlohmann::json;
@@ -1571,7 +1575,7 @@ std::vector<double> getFocal2PixelSamples(json isd, csm::WarningList *list) {
  * cannot be found or parsed from the ISD.
  */
 double getDetectorCenterLine(json isd, csm::WarningList *list) {
-  double line;
+  double line = 0.0;
   try {
     line = isd.at("detector_center").at("line");
   } catch (...) {
@@ -1596,7 +1600,7 @@ double getDetectorCenterLine(json isd, csm::WarningList *list) {
  * sample cannot be found or parsed from the ISD.
  */
 double getDetectorCenterSample(json isd, csm::WarningList *list) {
-  double sample;
+  double sample = 0.0;
   try {
     sample = isd.at("detector_center").at("sample");
   } catch (...) {
@@ -1623,7 +1627,7 @@ double getDetectorCenterSample(json isd, csm::WarningList *list) {
  * starting line cannot be found or parsed from the ISD.
  */
 double getDetectorStartingLine(json isd, csm::WarningList *list) {
-  double line;
+  double line = 0.0;
   try {
     line = isd.at("starting_detector_line");
   } catch (...) {
@@ -1650,7 +1654,7 @@ double getDetectorStartingLine(json isd, csm::WarningList *list) {
  * starting sample cannot be found or parsed from the ISD.
  */
 double getDetectorStartingSample(json isd, csm::WarningList *list) {
-  double sample;
+  double sample = 0.0;
   try {
     sample = isd.at("starting_detector_sample");
   } catch (...) {
@@ -2315,7 +2319,9 @@ std::vector<double> getSensorOrientations(json isd, csm::WarningList *list) {
  * parsed, 0.0 is returned.
  */
 double getExposureDuration(nlohmann::json isd, csm::WarningList *list) {
-  double duration;
+  // Initialize so a missing "line_exposure_duration" key returns a defined value
+  // (and does not leave an uninitialized double to be returned/used).
+  double duration = 0.0;
   try {
     duration = isd.at("line_exposure_duration");
   } catch (...) {
@@ -2343,7 +2349,9 @@ double getExposureDuration(nlohmann::json isd, csm::WarningList *list) {
  * 0.0 is returned.
  */
 double getScaledPixelWidth(nlohmann::json isd, csm::WarningList *list) {
-  double width;
+  // Initialize so a missing key returns a defined value rather than an
+  // uninitialized double.
+  double width = 0.0;
   try {
     width = isd.at("scaled_pixel_width");
   } catch (...) {
@@ -2475,117 +2483,7 @@ double getWavelength(json isd, csm::WarningList *list) {
 }
 
 /**
- * @brief Extracts the number of spectral bands from ISD JSON.
- *
- * @param isd The JSON object containing the ISD data.
- * @param list Optional pointer to a WarningList for logging warnings.
- *
- * @return The number of bands as an integer. Defaults to 1 if not found (backward compatible).
- */
-int getNumBands(json isd, csm::WarningList *list) {
-  int num_bands = 1;  // Default to 1 for backward compatibility
-  try {
-    num_bands = isd.at("num_bands");
-  } catch (...) {
-    // Single-band imagery, no warning needed
-  }
-  return num_bands;
-}
-
-/**
- * @brief Extracts band center wavelengths from ISD JSON.
- *
- * @param isd The JSON object containing the ISD data.
- * @param list Optional pointer to a WarningList for logging warnings.
- *
- * @return Vector of center wavelengths (nm) per band. Empty if not found.
- */
-std::vector<double> getBandWavelengths(json isd, csm::WarningList *list) {
-  std::vector<double> wavelengths;
-  try {
-    json wavelength_array = isd.at("band_wavelengths");
-    wavelengths = wavelength_array.get<std::vector<double>>();
-  } catch (...) {
-    if (list) {
-      list->push_back(csm::Warning(csm::Warning::DATA_NOT_AVAILABLE,
-                                   "No band_wavelengths in ISD",
-                                   "Utilities::getBandWavelengths()"));
-    }
-  }
-  return wavelengths;
-}
-
-/**
- * @brief Extracts band widths (FWHM) from ISD JSON.
- *
- * @param isd The JSON object containing the ISD data.
- * @param list Optional pointer to a WarningList for logging warnings.
- *
- * @return Vector of band widths (nm FWHM) per band. Empty if not found.
- */
-std::vector<double> getBandWidths(json isd, csm::WarningList *list) {
-  std::vector<double> widths;
-  try {
-    json width_array = isd.at("band_widths");
-    widths = width_array.get<std::vector<double>>();
-  } catch (...) {
-    if (list) {
-      list->push_back(csm::Warning(csm::Warning::DATA_NOT_AVAILABLE,
-                                   "No band_widths in ISD",
-                                   "Utilities::getBandWidths()"));
-    }
-  }
-  return widths;
-}
-
-/**
- * @brief Extracts band detector offsets from ISD JSON.
- *
- * @param isd The JSON object containing the ISD data.
- * @param list Optional pointer to a WarningList for logging warnings.
- *
- * @return Vector of detector sample offsets (pixels) per band. Empty if not found.
- */
-std::vector<double> getBandDetectorOffsets(json isd, csm::WarningList *list) {
-  std::vector<double> offsets;
-  try {
-    json offset_array = isd.at("band_detector_offsets");
-    offsets = offset_array.get<std::vector<double>>();
-  } catch (...) {
-    if (list) {
-      list->push_back(csm::Warning(csm::Warning::DATA_NOT_AVAILABLE,
-                                   "No band_detector_offsets in ISD",
-                                   "Utilities::getBandDetectorOffsets()"));
-    }
-  }
-  return offsets;
-}
-
-/**
- * @brief Extracts band focal length offsets from ISD JSON.
- *
- * @param isd The JSON object containing the ISD data.
- * @param list Optional pointer to a WarningList for logging warnings.
- *
- * @return Vector of focal length adjustments (mm) per band. Empty if not found.
- */
-std::vector<double> getBandFocalLengthOffsets(json isd, csm::WarningList *list) {
-  std::vector<double> offsets;
-  try {
-    json offset_array = isd.at("band_focal_length_offsets");
-    offsets = offset_array.get<std::vector<double>>();
-  } catch (...) {
-    if (list) {
-      list->push_back(csm::Warning(csm::Warning::DATA_NOT_AVAILABLE,
-                                   "No band_focal_length_offsets in ISD",
-                                   "Utilities::getBandFocalLengthOffsets()"));
-    }
-  }
-  return offsets;
-}
-
-/**
- * @description Converts a model state string into a JSON object. This function 
+ * @description Converts a model state string into a JSON object. This function
  * first sanitizes the input string by removing non-printable characters and 
  * then parses the string from the first occurrence of "{" to the last 
  * occurrence of "}" into a JSON object.
@@ -2875,6 +2773,18 @@ VariantMap variantMapFromJson(const nlohmann::json& j) {
         result.set<std::vector<int>>(key, it->get<std::vector<int>>());
       } else if ((*it)[0].is_number()) {
         result.set<std::vector<double>>(key, it->get<std::vector<double>>());
+      } else if ((*it)[0].is_string()) {
+        // Arrays of strings carry nested model states (e.g. per-band sub-models)
+        result.set<std::vector<std::string>>(key, it->get<std::vector<std::string>>());
+      } else if ((*it)[0].is_object()) {
+        // Arrays of objects (e.g. per-band ISDs/states) are stored as their
+        // serialized JSON strings so they survive the flat VariantMap.
+        std::vector<std::string> serialized;
+        serialized.reserve(it->size());
+        for (const auto& element : *it) {
+          serialized.push_back(element.dump());
+        }
+        result.set<std::vector<std::string>>(key, serialized);
       }
     }
   }
@@ -2905,6 +2815,9 @@ nlohmann::json jsonFromVariantMap(const VariantMap& vm) {
       case VariantMap::ValueType::VectorInt:
         result[key] = vm.get<std::vector<int>>(key);
         break;
+      case VariantMap::ValueType::VectorString:
+        result[key] = vm.get<std::vector<std::string>>(key);
+        break;
       default:
         throw std::runtime_error("Unknown type for key: " + key);
     }
@@ -2916,9 +2829,7 @@ nlohmann::json jsonFromVariantMap(const VariantMap& vm) {
 #include "UsgsAstroFrameSensorModel.h"
 #include "UsgsAstroLsSensorModel.h"
 #include "UsgsAstroPushFrameSensorModel.h"
-#ifndef __EMSCRIPTEN__
 #include "UsgsAstroProjectedSensorModel.h"
-#endif
 #include "UsgsAstroSarSensorModel.h"
 
 csm::RasterGM *getUsgsCsmModelFromIsd(
@@ -3019,12 +2930,10 @@ csm::RasterGM *getUsgsCsmModelFromVariantMap(const VariantMap &vm, const std::st
     UsgsAstroLsSensorModel *model = new UsgsAstroLsSensorModel();
     model->populateModel(vm);
     return model;
-#ifndef __EMSCRIPTEN__
   } else if (modelName == UsgsAstroProjectedSensorModel::_SENSOR_MODEL_NAME) {
     UsgsAstroProjectedSensorModel *model = new UsgsAstroProjectedSensorModel();
     model->populateModel(vm);
     return model;
-#endif
   } else if (modelName == UsgsAstroPushFrameSensorModel::_SENSOR_MODEL_NAME) {
     UsgsAstroPushFrameSensorModel *model = new UsgsAstroPushFrameSensorModel();
     model->populateModel(vm);
@@ -3051,10 +2960,8 @@ std::string getUsgsCsmModelJson(csm::RasterGM *model) {
     return pf->getModelJson();
   if (auto *sar = dynamic_cast<UsgsAstroSarSensorModel*>(model))
     return sar->getModelJson();
-#ifndef __EMSCRIPTEN__
   if (auto *proj = dynamic_cast<UsgsAstroProjectedSensorModel*>(model))
     return proj->getModelJson();
-#endif
   csm::Error::ErrorType aErrorType = csm::Error::SENSOR_MODEL_NOT_SUPPORTED;
   std::string aMessage = "Unsupported model type in getUsgsCsmModelJson()";
   std::string aFunction = "getUsgsCsmModelJson()";
@@ -3071,10 +2978,8 @@ VariantMap getUsgsCsmModelMap(csm::RasterGM *model) {
     return pf->getModelMap();
   if (auto *sar = dynamic_cast<UsgsAstroSarSensorModel*>(model))
     return sar->getModelMap();
-#ifndef __EMSCRIPTEN__
   if (auto *proj = dynamic_cast<UsgsAstroProjectedSensorModel*>(model))
     return proj->getModelMap();
-#endif
   csm::Error::ErrorType aErrorType = csm::Error::SENSOR_MODEL_NOT_SUPPORTED;
   std::string aMessage = "Unsupported model type in getUsgsCsmModelMap()";
   std::string aFunction = "getUsgsCsmModelMap()";
@@ -3142,3 +3047,277 @@ bool isUsgsCsmState(const std::string &str, std::string &modelName) {
   return !modelName.empty();
 
 }
+
+#ifdef USGSCSM_ENABLE_STARDS
+
+// True when path names a STARDS file, judged solely by the ".stards" extension.
+bool isStardsFile(const std::string &path) {
+  const std::string ext = ".stards";
+  if (path.size() < ext.size()) return false;
+  return std::equal(ext.rbegin(), ext.rend(), path.rbegin());
+}
+
+namespace {
+
+// star::MetadataValue::as<T>() and StarDataset::get<T>() require the EXACT
+// stored element type (they std::get_if the variant). These helpers read the
+// stored NDArray at its concrete type and widen it to the VariantMap's numeric
+// types: any integer width -> int / vector<int>, any float width -> double /
+// vector<double>.
+
+// Widen an integer NDArray (read at its exact stored width StoredT) into the
+// VariantMap as int (scalar) or vector<int>.
+template <typename StoredT, typename ArrayLike>
+void setIntFrom(VariantMap &vm, const std::string &key, const ArrayLike &src,
+                bool scalar) {
+  const star::NDArray<StoredT> arr = src.template as<StoredT>();
+  if (scalar) {
+    vm.set<int>(key, static_cast<int>(arr.flat(0)));
+  } else {
+    std::vector<int> ints;
+    ints.reserve(arr.data().size());
+    for (StoredT v : arr.data()) ints.push_back(static_cast<int>(v));
+    vm.set<std::vector<int>>(key, ints);
+  }
+}
+
+// Widen a float NDArray (read at its exact stored width StoredT) into the
+// VariantMap as double (scalar) or vector<double>.
+template <typename StoredT, typename ArrayLike>
+void setDoubleFrom(VariantMap &vm, const std::string &key, const ArrayLike &src,
+                   bool scalar) {
+  const star::NDArray<StoredT> arr = src.template as<StoredT>();
+  if (scalar) {
+    vm.set<double>(key, static_cast<double>(arr.flat(0)));
+  } else {
+    std::vector<double> vals;
+    vals.reserve(arr.data().size());
+    for (StoredT v : arr.data()) vals.push_back(static_cast<double>(v));
+    vm.set<std::vector<double>>(key, vals);
+  }
+}
+
+// Copy one STARDS value (metadata or array namespace) into the VariantMap.
+// STARDS stores every value as an NDArray, so a scalar and a 1-element array
+// are indistinguishable (size()==1). We store size()==1 values as scalars --
+// matching how CSM model-state JSON stores the vast majority of its keys -- and
+// rely on the VariantMap vector getters to unwrap a scalar back into a size-1
+// vector for the handful of genuinely-vector keys (m_intTimes,
+// m_opticalDistCoeffs, ...). `src` is anything exposing as<T>() (a
+// MetadataValue or an NDArray-returning proxy).
+template <typename ArrayLike>
+void setFromStards(VariantMap &vm, const std::string &key,
+                   star::DataType dtype, size_t nelem, const ArrayLike &src) {
+  const bool scalar = (nelem == 1);
+  switch (dtype) {
+    case star::DataType::STRING: {
+      const star::NDArray<std::string> arr = src.template as<std::string>();
+      if (scalar) vm.set<std::string>(key, arr.flat(0));
+      else        vm.set<std::vector<std::string>>(key, arr.data());
+      break;
+    }
+    case star::DataType::FLOAT32: setDoubleFrom<float>(vm, key, src, scalar); break;
+    case star::DataType::FLOAT64: setDoubleFrom<double>(vm, key, src, scalar); break;
+    case star::DataType::INT8:    setIntFrom<int8_t>(vm, key, src, scalar); break;
+    case star::DataType::INT16:   setIntFrom<int16_t>(vm, key, src, scalar); break;
+    case star::DataType::INT32:   setIntFrom<int32_t>(vm, key, src, scalar); break;
+    case star::DataType::INT64:   setIntFrom<int64_t>(vm, key, src, scalar); break;
+    case star::DataType::UINT8:   setIntFrom<uint8_t>(vm, key, src, scalar); break;
+    case star::DataType::UINT16:  setIntFrom<uint16_t>(vm, key, src, scalar); break;
+    case star::DataType::UINT32:  setIntFrom<uint32_t>(vm, key, src, scalar); break;
+    case star::DataType::UINT64:  setIntFrom<uint64_t>(vm, key, src, scalar); break;
+    default: break;  // Unknown dtype: skip.
+  }
+}
+
+// Adapter so a StarDataset array-namespace key can be read through the same
+// as<T>() interface used for metadata values.
+struct ArrayNamespaceSource {
+  star::StarDataset &ds;
+  const std::string &key;
+  template <typename T> star::NDArray<T> as() const { return ds.get<T>(key); }
+};
+
+}  // namespace
+
+// Read a STARDS state file into the flat VariantMap intermediary. STARDS keys
+// map 1-to-1 onto CSM state keys, so no ISD translation is needed. Values live
+// in two STARDS namespaces: small values/scalars in the metadata namespace and
+// large arrays in the array namespace; both are pulled into the same flat map.
+VariantMap variantMapFromStards(const std::string &path) {
+  VariantMap vm;
+
+  std::shared_ptr<star::StarDataset> ds;
+  try {
+    ds = star::StarDataset::open(path, "r");
+  } catch (const std::exception &e) {
+    throw csm::Error(csm::Error::FILE_READ,
+                     "Could not open STARDS file [" + path + "]: " + e.what(),
+                     "variantMapFromStards");
+  }
+
+  // Metadata namespace: scalars and small arrays.
+  for (const std::string &key : ds->get_metadata_keys()) {
+    std::shared_ptr<star::MetadataValue> mv = ds->meta.get(key);
+    if (mv) {
+      setFromStards(vm, key, mv->dtype, mv->size(), *mv);
+    }
+  }
+
+  // Array namespace: large arrays stored separately (STARDS handles
+  // decompression). These are always multi-element, so pass a size > 1.
+  for (const std::string &key : ds->get_all_keys()) {
+    ArrayNamespaceSource src{*ds, key};
+    setFromStards(vm, key, ds->dtype_of(key), /*nelem=*/2, src);
+  }
+
+  return vm;
+}
+
+// Build a camera model from a STARDS state file. The model name is carried in
+// the state itself under the m_modelName key (1-to-1 with CSM state), so this
+// reuses the existing VariantMap dispatcher with no other conversion.
+csm::RasterGM *getUsgsCsmModelFromStards(const std::string &path,
+                                         csm::WarningList *warnings) {
+  VariantMap vm = variantMapFromStards(path);
+  std::string modelName = vm.get<std::string>("m_modelName", std::string());
+  if (modelName.empty()) {
+    throw csm::Error(csm::Error::INVALID_SENSOR_MODEL_STATE,
+                     "STARDS file [" + path + "] has no m_modelName key",
+                     "getUsgsCsmModelFromStards");
+  }
+  return getUsgsCsmModelFromVariantMap(vm, modelName, warnings);
+}
+
+namespace {
+
+// Route one NDArray into the store by size, matching star_translate's paradigm:
+// values with more than `arrayThreshold` elements go to (sliceable) array
+// storage; scalars and short arrays go to the metadata block.
+template <typename T>
+void storeBySize(star::StarDataset &ds, const std::string &key,
+                 star::NDArray<T> arr, size_t arrayThreshold) {
+  if (arr.size() > arrayThreshold) {
+    ds.put(key, std::move(arr));
+  } else {
+    ds.meta.put(key, arr);
+  }
+}
+
+}  // namespace
+
+namespace {
+
+// Map a star_translate-style compression name to the STARDS enum. Throws
+// csm::Error on an unrecognized name.
+star::CompressionAlgorithm parseStardsCompression(const std::string &name) {
+  if (name == "none")         return star::CompressionAlgorithm::NONE;
+  if (name == "gzip")         return star::CompressionAlgorithm::GZIP;
+  if (name == "zstd")         return star::CompressionAlgorithm::ZSTD;
+  if (name == "lz4")          return star::CompressionAlgorithm::LZ4;
+  if (name == "gzip-shuffle") return star::CompressionAlgorithm::GZIP_SHUFFLE;
+  if (name == "lz4-shuffle")  return star::CompressionAlgorithm::LZ4_SHUFFLE;
+  throw csm::Error(csm::Error::INVALID_USE,
+                   "Unknown STARDS compression '" + name +
+                       "' (expected none, gzip, zstd, lz4, gzip-shuffle, "
+                       "lz4-shuffle)",
+                   "variantMapToStards");
+}
+
+}  // namespace
+
+// Write a CSM state VariantMap to a STARDS file. Keys are stored 1-to-1 with
+// their CSM state names so the file reads straight back via variantMapFromStards.
+// VariantMap scalar types become 1-element NDArrays (as star_translate does for
+// scalars), and each value is routed to array vs metadata storage by size.
+void variantMapToStards(const VariantMap &vm, const std::string &path,
+                        const StardsWriteOptions &options) {
+  star::StarConfig config;
+  // Array data uses the requested codec (default lz4-shuffle: the byte-shuffle
+  // prefilter compresses the numeric float64 arrays -- positions, quaternions,
+  // covariances -- much better, and lz4 keeps decode fast on load). The metadata
+  // block holds mixed-type/variable-width values and is read as a unit (never
+  // unshuffled), so it uses the base codec, matching star_translate.
+  config.compression = parseStardsCompression(options.compression);
+  config.metadata_compression = star::base_compression(config.compression);
+  config.block_size = options.blockSize;
+  const size_t arrayThreshold = options.arrayThreshold;
+  std::shared_ptr<star::StarDataset> ds = star::StarDataset::create(path, config);
+
+  const std::vector<size_t> scalarShape{1};
+  for (const std::string &key : vm.keys()) {
+    switch (vm.getValueType(key)) {
+      case VariantMap::ValueType::String: {
+        std::vector<std::string> data{vm.get<std::string>(key)};
+        storeBySize(*ds, key, star::NDArray<std::string>(data, scalarShape),
+                    arrayThreshold);
+        break;
+      }
+      case VariantMap::ValueType::Int: {
+        std::vector<int64_t> data{vm.get<int>(key)};
+        storeBySize(*ds, key, star::NDArray<int64_t>(data, scalarShape),
+                    arrayThreshold);
+        break;
+      }
+      case VariantMap::ValueType::Bool: {
+        // No bool dtype in STARDS; store as int (0/1), matching star_translate.
+        std::vector<int64_t> data{vm.get<bool>(key) ? 1 : 0};
+        storeBySize(*ds, key, star::NDArray<int64_t>(data, scalarShape),
+                    arrayThreshold);
+        break;
+      }
+      case VariantMap::ValueType::Double: {
+        std::vector<double> data{vm.get<double>(key)};
+        storeBySize(*ds, key, star::NDArray<double>(data, scalarShape),
+                    arrayThreshold);
+        break;
+      }
+      case VariantMap::ValueType::VectorInt: {
+        std::vector<int> v = vm.get<std::vector<int>>(key);
+        std::vector<int64_t> data(v.begin(), v.end());
+        std::vector<size_t> shape{data.size()};
+        storeBySize(*ds, key, star::NDArray<int64_t>(std::move(data), shape),
+                    arrayThreshold);
+        break;
+      }
+      case VariantMap::ValueType::VectorDouble: {
+        std::vector<double> v = vm.get<std::vector<double>>(key);
+        std::vector<size_t> shape{v.size()};
+        storeBySize(*ds, key, star::NDArray<double>(std::move(v), shape),
+                    arrayThreshold);
+        break;
+      }
+      case VariantMap::ValueType::VectorString: {
+        std::vector<std::string> v = vm.get<std::vector<std::string>>(key);
+        std::vector<size_t> shape{v.size()};
+        storeBySize(*ds, key, star::NDArray<std::string>(std::move(v), shape),
+                    arrayThreshold);
+        break;
+      }
+      default:
+        break;  // Unknown type: skip.
+    }
+  }
+}
+
+// Convenience overload: write with default options and only an array threshold.
+void variantMapToStards(const VariantMap &vm, const std::string &path,
+                        size_t arrayThreshold) {
+  StardsWriteOptions options;
+  options.arrayThreshold = arrayThreshold;
+  variantMapToStards(vm, path, options);
+}
+
+// Serialize a model to a STARDS state file, reusing getUsgsCsmModelMap to get
+// the state VariantMap (same paradigm as getUsgsCsmModelJson for JSON output).
+void writeUsgsCsmModelToStards(csm::RasterGM *model, const std::string &path,
+                               const StardsWriteOptions &options) {
+  variantMapToStards(getUsgsCsmModelMap(model), path, options);
+}
+
+// Convenience overload using default options.
+void writeUsgsCsmModelToStards(csm::RasterGM *model, const std::string &path) {
+  writeUsgsCsmModelToStards(model, path, StardsWriteOptions());
+}
+
+#endif  // USGSCSM_ENABLE_STARDS

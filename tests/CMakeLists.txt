@@ -15,8 +15,19 @@ add_executable(runCSMCameraModelTests
                UtilitiesTests.cpp
                EigenUtilitiesTests.cpp
                LoggingTests.cpp
-               ../ale/src/Rotation.cpp
-               ../ale/src/InterpUtils.cpp)
+               StardsTests.cpp
+               ../external/ale/src/Rotation.cpp
+               ../external/ale/src/InterpUtils.cpp)
+
+# When STARDS support is compiled into usgscsm, the tests need the same define
+# (to un-guard StardsTests.cpp) and the STARDS reader header on their include
+# path (StardsTests.cpp calls variantMapFromStards, which uses star:: types).
+# Linking the usgscsm_stards INTERFACE target supplies both the include dir and
+# the ENABLE_* feature defines.
+if(USGSCSM_ENABLE_STARDS)
+  target_compile_definitions(runCSMCameraModelTests PRIVATE USGSCSM_ENABLE_STARDS)
+  target_link_libraries(runCSMCameraModelTests usgscsm_stards)
+endif()
 if(WIN32)
   option(CMAKE_USE_WIN32_THREADS_INIT "using WIN32 threads" ON)
   option(gtest_disable_pthreads "Disable uses of pthreads in gtest." ON)

@@ -1,0 +1,31 @@
+{
+  "name": "usgscsm-wasm",
+  "version": "2.0.1",
+  "description": "Community Sensor Model (CSM) compliant sensor models from the USGS Astrogeology Science Center, compiled to WebAssembly.",
+  "type": "module",
+  "main": "dist/usgscsm.js",
+  "types": "dist/usgscsm.d.ts",
+  "files": [
+    "dist/"
+  ],
+  "scripts": {
+    "test": "node --test \"tests/wasm/*.test.mjs\""
+  },
+  "keywords": [
+    "csm",
+    "sensor-model",
+    "photogrammetry",
+    "wasm",
+    "webassembly",
+    "usgs",
+    "planetary"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/USGS-Astrogeology/usgscsm.git"
+  },
+  "license": "CC0-1.0",
+  "engines": {
+    "node": ">=18"
+  }
+}

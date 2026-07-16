@@ -194,13 +194,6 @@ std::vector<double> getSensorOrientations(nlohmann::json isd,
                                           csm::WarningList *list = nullptr);
 double getWavelength(nlohmann::json isd, csm::WarningList *list = nullptr);
 
-// Hyperspectral support
-int getNumBands(nlohmann::json isd, csm::WarningList *list = nullptr);
-std::vector<double> getBandWavelengths(nlohmann::json isd, csm::WarningList *list = nullptr);
-std::vector<double> getBandWidths(nlohmann::json isd, csm::WarningList *list = nullptr);
-std::vector<double> getBandDetectorOffsets(nlohmann::json isd, csm::WarningList *list = nullptr);
-std::vector<double> getBandFocalLengthOffsets(nlohmann::json isd, csm::WarningList *list = nullptr);
-
 nlohmann::json stateAsJson(std::string modelState);
 
 VariantMap variantMapFromJson(const nlohmann::json& j);
@@ -239,5 +232,40 @@ std::string getUsgsCsmModelJson(csm::RasterGM *model);
 VariantMap getUsgsCsmModelMap(csm::RasterGM *model);
 bool isUsgsCsmIsd(const std::string &str, std::string &modelName);
 bool isUsgsCsmState(const std::string &str, std::string &modelName);
+
+#ifdef USGSCSM_ENABLE_STARDS
+// STARDS state-file support. A STARDS file stores a CSM model state with keys
+// mapped 1-to-1 onto the CSM state keys (m_focalLength, m_quaternions, ...), so
+// it converts directly into the VariantMap intermediary with no ISD translation.
+VariantMap variantMapFromStards(const std::string &path);
+csm::RasterGM *getUsgsCsmModelFromStards(const std::string &path, csm::WarningList *warnings);
+// True when path names a STARDS file (by extension). Used to route file input.
+bool isStardsFile(const std::string &path);
+
+// Options controlling how a STARDS file is written. Defaults match the values
+// used when no options are given (lz4-shuffle array data, 1 MiB blocks, a
+// 100-element array/metadata split). `compression` accepts the star_translate
+// names: none, gzip, zstd, lz4, gzip-shuffle, lz4-shuffle.
+struct StardsWriteOptions {
+  std::string compression = "lz4-shuffle";
+  size_t blockSize = 1024 * 1024;
+  size_t arrayThreshold = 100;
+};
+
+// Write a CSM state VariantMap to a STARDS file. Each key is stored 1-to-1; a
+// value with more than the array threshold goes to STARDS array storage,
+// smaller values and scalars go to the metadata block (matching star_translate).
+void variantMapToStards(const VariantMap &vm, const std::string &path,
+                        const StardsWriteOptions &options);
+// Convenience overload using default options.
+void variantMapToStards(const VariantMap &vm, const std::string &path,
+                        size_t arrayThreshold = 100);
+
+// Serialize a model to a STARDS state file (reuses getUsgsCsmModelMap).
+void writeUsgsCsmModelToStards(csm::RasterGM *model, const std::string &path,
+                               const StardsWriteOptions &options);
+// Convenience overload using default options.
+void writeUsgsCsmModelToStards(csm::RasterGM *model, const std::string &path);
+#endif
 
 #endif  // INCLUDE_USGSCSM_UTILITIES_H_

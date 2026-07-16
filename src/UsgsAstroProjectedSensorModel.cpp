@@ -22,15 +22,15 @@ DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF 
 IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT
 OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. **/
 
-#ifndef __EMSCRIPTEN__
-// ProjectedSensorModel requires PROJ library which is not available in WASM builds
-
 #include "UsgsAstroProjectedSensorModel.h"
 #include "Utilities.h"
 #include "VariantMap.h"
 #include "Logging.h"
+#include "usgscsm/ProjDbVfs.h"
 
 #include <proj.h>
+
+#include <cstdlib>
 
 #include <Error.h>
 #include <nlohmann/json.hpp>
@@ -125,6 +125,17 @@ void UsgsAstroProjectedSensorModel::populateModel(const VariantMap& state) {
 
   PJ_CONTEXT *C = proj_context_create();
 
+#ifdef USGSCSM_EMBED_PROJ_DB
+  // Serve the PROJ database from the copy embedded in the plugin, so no loose
+  // proj.db file or PROJ_DATA environment variable is required at runtime. The
+  // custom in-memory VFS ignores the path; "proj.db" is a nominal filename.
+  // (Only for the embedded-PROJ build; the external-deps build uses the system
+  // PROJ's own data resolution.)
+  const std::string &vfsName = usgscsm::ensureProjDbVfsRegistered();
+  proj_context_set_sqlite3_vfs_name(C, vfsName.c_str());
+  proj_context_set_database_path(C, "proj.db", nullptr, nullptr);
+#endif
+
   m_isdProj = proj_create(C, (m_projString + " +type=crs").c_str());
   if (0 == m_isdProj) {
     LOG_INFO(
@@ -142,6 +153,20 @@ void UsgsAstroProjectedSensorModel::populateModel(const VariantMap& state) {
         
         "Failed to create geocent transformation object");
     return;
+  }
+
+  // The ISD CRS and the ECEF geocent CRS describe the same planetary body, but
+  // PROJ cannot always match their celestial-body names (common for non-Earth
+  // bodies), which makes proj_create_crs_to_crs_from_pj fail with "no match
+  // found". Planetary imagery is the norm here, so opt into PROJ's override
+  // unless the caller has explicitly set the variable (their value then wins,
+  // including turning the check back on with NO/FALSE/OFF).
+  if (getenv("PROJ_IGNORE_CELESTIAL_BODY") == nullptr) {
+#ifdef _WIN32
+    _putenv_s("PROJ_IGNORE_CELESTIAL_BODY", "YES");
+#else
+    setenv("PROJ_IGNORE_CELESTIAL_BODY", "YES", /*overwrite=*/0);
+#endif
   }
 
   m_isdProj2ecefProj = proj_create_crs_to_crs_from_pj(C, m_isdProj, m_ecefProj, 0, 0);
@@ -867,5 +892,3 @@ VariantMap UsgsAstroProjectedSensorModel::constructStateFromIsd(
   // some state data is not in the ISD and requires a SM to compute them.
   return projState;
 }
-
-#endif  // __EMSCRIPTEN__

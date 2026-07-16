@@ -1283,6 +1283,7 @@ VariantMap UsgsAstroFrameSensorModel::getModelMap() const {
   state.set<std::string>("m_collectionIdentifier", m_collectionIdentifier);
   state.set<std::vector<double>>("m_referencePointXyz", {m_referencePointXyz.x, m_referencePointXyz.y, m_referencePointXyz.z});
   state.set<std::vector<double>>("m_currentParameterCovariance", m_currentParameterCovariance);
+
   LOG_TRACE( "Model state\n{}", state.dumps());
   return state;
 }
