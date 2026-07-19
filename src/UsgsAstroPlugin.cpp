@@ -493,7 +493,6 @@ csm::Model *UsgsAstroPlugin::constructModelFromISD(
 
   std::string stringIsd = loadImageSupportData(imageSupportDataOriginal);
   LOG_TRACE( "ISD string: {}", stringIsd);
-#ifndef __EMSCRIPTEN__
   if (stringIsd.find("\"geotransform\"") != std::string::npos) {
     UsgsAstroProjectedSensorModel *projModel = new UsgsAstroProjectedSensorModel();
     try {

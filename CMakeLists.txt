@@ -115,31 +115,22 @@ if(USGSCSM_EXTERNAL_DEPS)
 else()
   set(BUILD_SHARED_LIBS OFF)
   message(STATUS "Using embedded dependencies")
-<<<<<<< HEAD
   # CSM API library
   add_subdirectory(external/csm)
   # Directory holding the CSM headers (RasterGM.h, Error.h, ...). Consumers that
   # include them bare (e.g. #include <RasterGM.h>) need this on their path.
   set(CSM_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/csm")
   set(CSM_LIBRARY csmapi)
-=======
->>>>>>> 121b9e4fd386430824522314134c3e50e1a6a72b
 
   # PROJ (for the projected sensor model) is built for both native and WASM.
   # Its database, proj.db, is embedded and served from memory via a custom
   # SQLite VFS, so no runtime file or PROJ_DATA is needed on either platform.
   if(TRUE)
     # First configure proj library
-<<<<<<< HEAD
     set(BUILD_SHARED_LIBS OFF)
     set(PROJ_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/PROJ")
     set(CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/external/PROJ/cmake ${CMAKE_MODULE_PATH})
     set(CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/external/PROJ/src ${CMAKE_MODULE_PATH})
-=======
-    set(PROJ_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/PROJ")
-    set(CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/PROJ/cmake ${CMAKE_MODULE_PATH})
-    set(CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/PROJ/src ${CMAKE_MODULE_PATH})
->>>>>>> 121b9e4fd386430824522314134c3e50e1a6a72b
 
     ################################################################################
     # SQLite3 (vendored, static)
@@ -805,7 +796,6 @@ else()
   set( CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS} -fPIC" )
   set( CMAKE_C_FLAGS  "${CMAKE_C_FLAGS} -fPIC" )
 
-<<<<<<< HEAD
   add_library(usgscsm SHARED ${USGSCSM_SRC_FILES}
                              ${USGSCSM_EMBED_PROJ_DB_SRCS}
                              $<TARGET_OBJECTS:ale>
@@ -813,9 +803,6 @@ else()
   # The projected model serves proj.db from the embedded blob via the custom VFS.
   target_link_libraries(usgscsm PRIVATE usgscsm_sqlite3)
   target_compile_definitions(usgscsm PRIVATE USGSCSM_EMBED_PROJ_DB)
-=======
-  add_library(usgscsm SHARED ${USGSCSM_SRC_FILES})
->>>>>>> 121b9e4fd386430824522314134c3e50e1a6a72b
 endif(USGSCSM_EXTERNAL_DEPS)
 
 set_target_properties(usgscsm PROPERTIES
@@ -858,7 +845,7 @@ if(USGSCSM_ENABLE_STARDS)
   target_include_directories(usgscsm_stards INTERFACE "${STARDS_INCLUDE_DIR}")
 
   # Compression is always available. lz4 is vendored (compiles to WASM too).
-  add_subdirectory(external/lz4)
+  add_subdirectory(cmake/lz4 "${CMAKE_CURRENT_BINARY_DIR}/lz4")
   target_compile_definitions(usgscsm_stards INTERFACE ENABLE_LZ4)
   target_link_libraries(usgscsm_stards INTERFACE usgscsm_lz4)
 
@@ -886,7 +873,7 @@ if(USGSCSM_ENABLE_STARDS)
     endif()
 
     # curl (vsicurl/HTTP) + OpenSSL libcrypto (S3 SigV4), both vendored static.
-    add_subdirectory(external/openssl)
+    add_subdirectory(cmake/openssl "${CMAKE_CURRENT_BINARY_DIR}/openssl")
     add_subdirectory(external/curl)
     target_compile_definitions(usgscsm_stards INTERFACE ENABLE_CURL ENABLE_S3)
     target_link_libraries(usgscsm_stards INTERFACE usgscsm_curl usgscsm_crypto)
@@ -915,21 +902,11 @@ add_executable(usgscsm_cam_test bin/usgscsm_cam_test.cc)
 target_link_libraries(usgscsm_cam_test
     usgscsm)
 
-<<<<<<< HEAD
-# The CLI calls the STARDS helper functions (defined in libusgscsm) when STARDS
-# support is enabled, so it only needs the gate define to un-guard those code
-# paths. The stards.h header itself is used only inside libusgscsm.
 if(USGSCSM_ENABLE_STARDS)
   target_compile_definitions(usgscsm_cam_test PRIVATE USGSCSM_ENABLE_STARDS)
 endif()
 
 install(TARGETS usgscsm LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}/csmplugins/)
-=======
-install(TARGETS usgscsm
-        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}/csmplugins/
-        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
->>>>>>> 121b9e4fd386430824522314134c3e50e1a6a72b
 install(DIRECTORY ${USGSCSM_INSTALL_INCLUDE_DIRS} DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 install(TARGETS usgscsm_cam_test RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 

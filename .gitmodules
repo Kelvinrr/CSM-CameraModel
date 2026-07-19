@@ -19,3 +19,9 @@
 [submodule "external/StarDS"]
 	path = external/StarDS
 	url = git@github.com:DOI-USGS/StarDS.git
+[submodule "external/lz4"]
+	path = external/lz4
+	url = https://github.com/lz4/lz4
+[submodule "external/openssl"]
+	path = external/openssl
+	url = https://github.com/openssl/openssl

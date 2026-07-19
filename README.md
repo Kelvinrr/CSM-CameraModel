@@ -281,12 +281,7 @@ module explicitly:
 USGSCSM_WASM=/path/to/build/dist/usgscsm.js npm test
 ```
 
-The tests cover loading a model from an ISD and from a serialized state, the
-image↔ground coordinate transforms and their round-trip, the sensor-position and
-image-size accessors, `getModelState`/`loadFromState` equivalence, and error
-handling. To add cases, drop another `*.test.mjs` file in `tests/wasm/`.
-
-For a quick manual check, you can also load the ES module in Node directly and
+You can also load the ES module in Node directly and
 exercise the model API. From the build directory (`wasmbuild/`), the outputs are
 in `dist/`. Create a small ES-module script:
 
@@ -317,15 +312,6 @@ Run it with Node (18+; the module uses ESM and top-level `await`):
 node wasm_smoke.mjs
 ```
 
-The projected model works the same way with no extra setup — `proj.db` is
-embedded, so no `PROJ_DATA` or data files are needed:
-
-```javascript
-const state = fs.readFileSync('projected_state.json', 'utf8');   // getModelState() output
-model.loadFromState(state);                                      // USGS_ASTRO_PROJECTED_SENSOR_MODEL
-console.log(model.imageToGround(8.0, 8.0, 0.0));
-```
-
 You can generate a model state from an ISD with the native `usgscsm_cam_test`
 tool (`--output-model-state`), or with `csm_translate`.
 
@@ -334,9 +320,6 @@ tool (`--output-model-state`), or with `csm_translate`.
 ```javascript
 // Using npm package
 import USGSCSM from 'usgscsm-wasm';
-
-// OR using CDN
-// import USGSCSM from 'https://cdn.jsdelivr.net/npm/usgscsm-wasm/dist/usgscsm.js';
 
 const Module = await USGSCSM();
 const model = new Module.USGSCSMModel();
