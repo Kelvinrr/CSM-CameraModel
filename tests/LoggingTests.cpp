@@ -1,4 +1,5 @@
 #include "usgscsm/Logging.h"
+#include "UsgsAstroPlugin.h"
 #include <gtest/gtest.h>
 #include <sstream>
 
@@ -99,4 +100,21 @@ TEST_F(LoggingTests, NoPlaceholders) {
     std::string output = getOutput();
 
     EXPECT_NE(output.find("Test message"), std::string::npos);
+}
+
+TEST_F(LoggingTests, UnprojectedIsdLogsNoProjectedError) {
+    // A frame ISD has no "geotransform", so the projected sensor model is not
+    // attempted, and constructing a normal frame model logs no error. Regression
+    // for the misleading "Could not construct model ... geotransform" error that
+    // a plain frame or unprojected linescan load used to print at ERROR level.
+    UsgsAstroPlugin testPlugin;
+    csm::Isd isd("data/simpleFramerISD.img");
+    csm::Model *model = testPlugin.constructModelFromISD(
+        isd, "USGS_ASTRO_FRAME_SENSOR_MODEL", nullptr);
+    ASSERT_NE(model, nullptr);
+    std::string output = getOutput();
+
+    EXPECT_EQ(output.find("[ERROR]"), std::string::npos);
+    EXPECT_EQ(output.find("geotransform"), std::string::npos);
+    delete model;
 }

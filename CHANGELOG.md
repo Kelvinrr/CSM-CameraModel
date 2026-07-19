@@ -36,6 +36,17 @@ release.
 ## [Unreleased]
 
 ### Added
+- A `CASSIS` distortion type implementing the TGO CaSSIS rational ratio-of-quadratics distortion model, matching ISIS `TgoCassisDistortionMap`, with the json-name, ALE integer-enum, and coefficient-extraction dispatch wired in. Pairs with the ALE TGO CaSSIS driver. [#512](https://github.com/DOI-USGS/usgscsm/pull/512)
+
+### Fixed
+- `constructModelFromISD` now attempts the projected sensor model only when the ISD declares a projection (has a `geotransform`). A frame or unprojected linescan ISD is built directly, without the projected attempt that would always fail on the missing `geotransform` and log a misleading error on a normal load. A genuine failure of a projected ISD is still logged as an error. [#525](https://github.com/DOI-USGS/usgscsm/pull/525)
+- `applyDistortion` and `removeDistortion` now throw on a distortion type they do not handle instead of silently returning the point undistorted. This covers the `LUNARORBITER` type, which is declared and emitted by ALE but was never implemented here, and any type from a model state that this build does not recognize. Previously such a model was silently treated as distortion-free, producing wrong geometry with no warning. [#521](https://github.com/DOI-USGS/usgscsm/pull/521)
+- Changed the default log level from `INFO` to `ERROR` so high-volume callers are not stalled by per-call logging in `groundToImage`/`imageToGround`. The level is still overridable with the `USGSCSM_LOG_LEVEL` environment variable. [#514](https://github.com/DOI-USGS/usgscsm/pull/514)
+- The Windows build now produces and installs the `usgscsm` import library alongside `usgscsm.dll`, and `usgscsm_cam_test` links against it. Enabled `WINDOWS_EXPORT_ALL_SYMBOLS` on the `usgscsm` target, and added RUNTIME and ARCHIVE destinations to its install rule, which the previous `LIBRARY`-only tagging omitted on Windows. Unix behavior is unchanged. [#518](https://github.com/DOI-USGS/usgscsm/pull/518)
+
+## [2.1.0] - 2026-06-09
+
+### Added
 - `isUsgsCsmIsd()` and `isUsgsCsmState()` quick string-scan helpers in `UsgsAstroPluginSupport` to identify ISD vs model state without full JSON parsing or model construction. [#502](https://github.com/DOI-USGS/usgscsm/pull/502)
 - Added the `KPLOSHADOWCAM` distortion type for the KPLO ShadowCam imager. [#505](https://github.com/DOI-USGS/usgscsm/pull/505)
 

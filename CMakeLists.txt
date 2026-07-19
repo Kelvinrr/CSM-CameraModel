@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.10)
-project(usgscsm VERSION 2.0.1 DESCRIPTION "usgscsm library")
+project(usgscsm VERSION 2.1.0 DESCRIPTION "usgscsm library")
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
@@ -86,15 +86,17 @@ set(USGSCSM_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/include/usgscsm"
                          "${CMAKE_CURRENT_SOURCE_DIR}/external"
 )
 
+# CSM API library
+find_path(CSM_INCLUDE_DIR NAMES "csm.h"
+                          PATH_SUFFIXES "csm"
+                          PATHS $ENV{CONDA_PREFIX}/include/
+                          REQUIRED)
+find_library(CSM_LIBRARY csmapi PATHS $ENV{CONDA_PREFIX}/lib REQUIRED)
+message("-- Found CSM Library: ${CSM_LIBRARY}")
+message("-- Found CSM Include Directory: ${CSM_INCLUDE_DIR}")
+
 if(USGSCSM_EXTERNAL_DEPS)
   message(STATUS "Using external dependencies")
-  # CSM API library
-  find_path(CSM_INCLUDE_DIR NAMES "csm.h"
-                            PATH_SUFFIXES "csm"
-                            PATHS $ENV{CONDA_PREFIX}/include/)
-  find_library(CSM_LIBRARY csmapi PATHS $ENV{CONDA_PREFIX}/lib)
-  message("-- Found external CSM Library: ${CSM_LIBRARY}")
-  message("-- Found external CSM Include Directory: ${CSM_INCLUDE_DIR}")
 
   # Nlohmann JSON
   find_package(nlohmann_json REQUIRED)
@@ -111,23 +113,33 @@ if(USGSCSM_EXTERNAL_DEPS)
   set(PROJ_TARGET PROJ::proj)
   add_library(usgscsm SHARED ${USGSCSM_SRC_FILES})
 else()
+  set(BUILD_SHARED_LIBS OFF)
   message(STATUS "Using embedded dependencies")
+<<<<<<< HEAD
   # CSM API library
   add_subdirectory(external/csm)
   # Directory holding the CSM headers (RasterGM.h, Error.h, ...). Consumers that
   # include them bare (e.g. #include <RasterGM.h>) need this on their path.
   set(CSM_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/csm")
   set(CSM_LIBRARY csmapi)
+=======
+>>>>>>> 121b9e4fd386430824522314134c3e50e1a6a72b
 
   # PROJ (for the projected sensor model) is built for both native and WASM.
   # Its database, proj.db, is embedded and served from memory via a custom
   # SQLite VFS, so no runtime file or PROJ_DATA is needed on either platform.
   if(TRUE)
     # First configure proj library
+<<<<<<< HEAD
     set(BUILD_SHARED_LIBS OFF)
     set(PROJ_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/PROJ")
     set(CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/external/PROJ/cmake ${CMAKE_MODULE_PATH})
     set(CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/external/PROJ/src ${CMAKE_MODULE_PATH})
+=======
+    set(PROJ_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/PROJ")
+    set(CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/PROJ/cmake ${CMAKE_MODULE_PATH})
+    set(CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/PROJ/src ${CMAKE_MODULE_PATH})
+>>>>>>> 121b9e4fd386430824522314134c3e50e1a6a72b
 
     ################################################################################
     # SQLite3 (vendored, static)
@@ -778,10 +790,6 @@ else()
                             $<INSTALL_INTERFACE:include>
                             PRIVATE)
 
-  target_include_directories(ale
-                             PRIVATE
-                             ${ALE_INCLUDE_DIRS}
-  )
   set(ALE_LINKS nlohmann_json::nlohmann_json
                 Eigen3::Eigen
   )
@@ -797,6 +805,7 @@ else()
   set( CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS} -fPIC" )
   set( CMAKE_C_FLAGS  "${CMAKE_C_FLAGS} -fPIC" )
 
+<<<<<<< HEAD
   add_library(usgscsm SHARED ${USGSCSM_SRC_FILES}
                              ${USGSCSM_EMBED_PROJ_DB_SRCS}
                              $<TARGET_OBJECTS:ale>
@@ -804,19 +813,22 @@ else()
   # The projected model serves proj.db from the embedded blob via the custom VFS.
   target_link_libraries(usgscsm PRIVATE usgscsm_sqlite3)
   target_compile_definitions(usgscsm PRIVATE USGSCSM_EMBED_PROJ_DB)
+=======
+  add_library(usgscsm SHARED ${USGSCSM_SRC_FILES})
+>>>>>>> 121b9e4fd386430824522314134c3e50e1a6a72b
 endif(USGSCSM_EXTERNAL_DEPS)
 
 set_target_properties(usgscsm PROPERTIES
     VERSION ${PROJECT_VERSION}
     SOVERSION 1
+    WINDOWS_EXPORT_ALL_SYMBOLS ON
 )
 set(USGSCSM_INCLUDE_DIRS "${USGSCSM_INCLUDE_DIRS}"
                          "${EIGEN3_INCLUDE_DIR}"
                          "${PROJ_INCLUDE_DIR}")
 
 # These will be copied upon installation to ${CMAKE_INSTALL_INCLUDEDIR}/include
-set(USGSCSM_INSTALL_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/include/usgscsm"
-                                 "${CMAKE_CURRENT_SOURCE_DIR}/include/spdlog")
+set(USGSCSM_INSTALL_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/include/usgscsm")
 
 target_include_directories(usgscsm
                            PUBLIC
@@ -901,9 +913,9 @@ target_link_libraries(usgscsm
 
 add_executable(usgscsm_cam_test bin/usgscsm_cam_test.cc)
 target_link_libraries(usgscsm_cam_test
-    usgscsm
-    ${CSM_LIBRARY})
+    usgscsm)
 
+<<<<<<< HEAD
 # The CLI calls the STARDS helper functions (defined in libusgscsm) when STARDS
 # support is enabled, so it only needs the gate define to un-guard those code
 # paths. The stards.h header itself is used only inside libusgscsm.
@@ -912,6 +924,12 @@ if(USGSCSM_ENABLE_STARDS)
 endif()
 
 install(TARGETS usgscsm LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}/csmplugins/)
+=======
+install(TARGETS usgscsm
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}/csmplugins/
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
+>>>>>>> 121b9e4fd386430824522314134c3e50e1a6a72b
 install(DIRECTORY ${USGSCSM_INSTALL_INCLUDE_DIRS} DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 install(TARGETS usgscsm_cam_test RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 
