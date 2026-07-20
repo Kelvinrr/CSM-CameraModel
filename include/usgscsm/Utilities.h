@@ -239,20 +239,15 @@ VariantMap variantMapFromStards(const std::string &path);
 csm::RasterGM *getUsgsCsmModelFromStards(const std::string &path, csm::WarningList *warnings);
 bool isStardsFile(const std::string &path);
 
-struct StardsWriteOptions {
-  std::string compression = "lz4-shuffle";
-  size_t blockSize = 1024 * 1024;
-  size_t arrayThreshold = 100;
-};
-
 void variantMapToStards(const VariantMap &vm, const std::string &path,
-                        const StardsWriteOptions &options);
-void variantMapToStards(const VariantMap &vm, const std::string &path,
+                        const std::string &compression = "lz4-shuffle",
+                        size_t blockSize = 1024 * 1024,
                         size_t arrayThreshold = 100);
 
 void writeUsgsCsmModelToStards(csm::RasterGM *model, const std::string &path,
-                               const StardsWriteOptions &options);
-void writeUsgsCsmModelToStards(csm::RasterGM *model, const std::string &path);
+                               const std::string &compression = "lz4-shuffle",
+                               size_t blockSize = 1024 * 1024,
+                               size_t arrayThreshold = 100);
 #endif
 
 #endif  // INCLUDE_USGSCSM_UTILITIES_H_

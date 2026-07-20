@@ -872,7 +872,8 @@ if(USGSCSM_ENABLE_STARDS)
       target_link_libraries(usgscsm_stards INTERFACE ${ZLIB_LIBRARIES})
     endif()
 
-    # curl (vsicurl/HTTP) + OpenSSL libcrypto (S3 SigV4), both vendored static.
+    # curl (vsicurl/HTTP) + OpenSSL (S3 SigV4, and TLS for curl on Linux), both
+    # vendored static. OpenSSL is configured first so curl can link against it.
     add_subdirectory(cmake/openssl "${CMAKE_CURRENT_BINARY_DIR}/openssl")
     add_subdirectory(external/curl)
     target_compile_definitions(usgscsm_stards INTERFACE ENABLE_CURL ENABLE_S3)

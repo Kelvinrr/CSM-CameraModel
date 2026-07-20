@@ -188,20 +188,22 @@ bool writeModel(csm::RasterGM *model, const std::string &path,
 
 #ifdef USGSCSM_ENABLE_STARDS
   if (outputFormat == "stards") {
-    StardsWriteOptions opts;
+    std::string compression = "lz4-shuffle";
+    size_t blockSize = 1024 * 1024;
+    size_t arrayThreshold = 100;
     for (const auto &kv : advanced) {
       if (kv.first == "compression") {
-        opts.compression = kv.second;
+        compression = kv.second;
       } else if (kv.first == "block-size" || kv.first == "block_size") {
-        opts.blockSize = std::stoul(kv.second);
+        blockSize = std::stoul(kv.second);
       } else if (kv.first == "array-threshold" || kv.first == "array_threshold") {
-        opts.arrayThreshold = std::stoul(kv.second);
+        arrayThreshold = std::stoul(kv.second);
       } else {
         std::cerr << "Unknown STARDS option '" << kv.first << "'\n";
         return false;
       }
     }
-    writeUsgsCsmModelToStards(model, path, opts);
+    writeUsgsCsmModelToStards(model, path, compression, blockSize, arrayThreshold);
     return true;
   }
 #else

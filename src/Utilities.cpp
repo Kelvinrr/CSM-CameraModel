@@ -3248,22 +3248,13 @@ star::CompressionAlgorithm parseStardsCompression(const std::string &name) {
 
 }  // namespace
 
-// Write a CSM state VariantMap to a STARDS file. Keys are stored 1-to-1 with
-// their CSM state names so the file reads straight back via variantMapFromStards.
-// VariantMap scalar types become 1-element NDArrays (as star_translate does for
-// scalars), and each value is routed to array vs metadata storage by size.
 void variantMapToStards(const VariantMap &vm, const std::string &path,
-                        const StardsWriteOptions &options) {
+                        const std::string &compression, size_t blockSize,
+                        size_t arrayThreshold) {
   star::StarConfig config;
-  // Array data uses the requested codec (default lz4-shuffle: the byte-shuffle
-  // prefilter compresses the numeric float64 arrays -- positions, quaternions,
-  // covariances -- much better, and lz4 keeps decode fast on load). The metadata
-  // block holds mixed-type/variable-width values and is read as a unit (never
-  // unshuffled), so it uses the base codec, matching star_translate.
-  config.compression = parseStardsCompression(options.compression);
+  config.compression = parseStardsCompression(compression);
   config.metadata_compression = star::base_compression(config.compression);
-  config.block_size = options.blockSize;
-  const size_t arrayThreshold = options.arrayThreshold;
+  config.block_size = blockSize;
   std::shared_ptr<star::StarDataset> ds = star::StarDataset::create(path, config);
 
   const std::vector<size_t> scalarShape{1};
@@ -3322,24 +3313,13 @@ void variantMapToStards(const VariantMap &vm, const std::string &path,
   }
 }
 
-// Convenience overload: write with default options and only an array threshold.
-void variantMapToStards(const VariantMap &vm, const std::string &path,
-                        size_t arrayThreshold) {
-  StardsWriteOptions options;
-  options.arrayThreshold = arrayThreshold;
-  variantMapToStards(vm, path, options);
-}
-
 // Serialize a model to a STARDS state file, reusing getUsgsCsmModelMap to get
 // the state VariantMap (same paradigm as getUsgsCsmModelJson for JSON output).
 void writeUsgsCsmModelToStards(csm::RasterGM *model, const std::string &path,
-                               const StardsWriteOptions &options) {
-  variantMapToStards(getUsgsCsmModelMap(model), path, options);
-}
-
-// Convenience overload using default options.
-void writeUsgsCsmModelToStards(csm::RasterGM *model, const std::string &path) {
-  writeUsgsCsmModelToStards(model, path, StardsWriteOptions());
+                               const std::string &compression, size_t blockSize,
+                               size_t arrayThreshold) {
+  variantMapToStards(getUsgsCsmModelMap(model), path, compression, blockSize,
+                     arrayThreshold);
 }
 
 #endif  // USGSCSM_ENABLE_STARDS
