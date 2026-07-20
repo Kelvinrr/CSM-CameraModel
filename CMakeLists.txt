@@ -86,17 +86,17 @@ set(USGSCSM_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/include/usgscsm"
                          "${CMAKE_CURRENT_SOURCE_DIR}/external"
 )
 
-# CSM API library
-find_path(CSM_INCLUDE_DIR NAMES "csm.h"
-                          PATH_SUFFIXES "csm"
-                          PATHS $ENV{CONDA_PREFIX}/include/
-                          REQUIRED)
-find_library(CSM_LIBRARY csmapi PATHS $ENV{CONDA_PREFIX}/lib REQUIRED)
-message("-- Found CSM Library: ${CSM_LIBRARY}")
-message("-- Found CSM Include Directory: ${CSM_INCLUDE_DIR}")
-
 if(USGSCSM_EXTERNAL_DEPS)
   message(STATUS "Using external dependencies")
+
+  # CSM API library
+  find_path(CSM_INCLUDE_DIR NAMES "csm.h"
+                            PATH_SUFFIXES "csm"
+                            PATHS $ENV{CONDA_PREFIX}/include/
+                            REQUIRED)
+  find_library(CSM_LIBRARY csmapi PATHS $ENV{CONDA_PREFIX}/lib REQUIRED)
+  message("-- Found CSM Library: ${CSM_LIBRARY}")
+  message("-- Found CSM Include Directory: ${CSM_INCLUDE_DIR}")
 
   # Nlohmann JSON
   find_package(nlohmann_json REQUIRED)
