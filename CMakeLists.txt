@@ -858,15 +858,24 @@ if(USGSCSM_ENABLE_STARDS)
     target_compile_options(usgscsm_stards INTERFACE "-sUSE_ZLIB=1")
     target_link_options(usgscsm_stards INTERFACE "-sUSE_ZLIB=1")
   else()
-    # Native: prefer a static libz.a (baked in, no runtime dylib), else shared.
+    # Native: prefer conda's static libz.a (baked in, no runtime dylib), else
+    # fall back to shared zlib. The static search is restricted to CONDA_PREFIX
+    # via NO_DEFAULT_PATH: a system libz.a (e.g. Ubuntu's zlib1g-dev at
+    # /usr/lib/<triple>/libz.a) is built without -fPIC and cannot be linked into
+    # the shared libusgscsm.so ("relocation ... can not be used when making a
+    # shared object"), so it must never be picked up. Only conda's PIC static --
+    # or, failing that, the shared lib -- is acceptable. HINTS/PATHS are searched
+    # before the system dirs, but NO_DEFAULT_PATH is what actually keeps the
+    # non-PIC system archive out of the running entirely.
     target_compile_definitions(usgscsm_stards INTERFACE ENABLE_ZLIB)
-    find_path(ZLIB_STATIC_INCLUDE_DIR zlib.h PATHS ENV CONDA_PREFIX PATH_SUFFIXES include)
-    find_library(ZLIB_STATIC_LIB NAMES libz.a PATHS ENV CONDA_PREFIX PATH_SUFFIXES lib)
+    find_path(ZLIB_STATIC_INCLUDE_DIR zlib.h HINTS ENV CONDA_PREFIX PATH_SUFFIXES include NO_DEFAULT_PATH)
+    find_library(ZLIB_STATIC_LIB NAMES libz.a HINTS ENV CONDA_PREFIX PATH_SUFFIXES lib NO_DEFAULT_PATH)
     if(ZLIB_STATIC_LIB AND ZLIB_STATIC_INCLUDE_DIR)
       message(STATUS "STARDS zlib: static ${ZLIB_STATIC_LIB}")
       target_include_directories(usgscsm_stards INTERFACE ${ZLIB_STATIC_INCLUDE_DIR})
       target_link_libraries(usgscsm_stards INTERFACE ${ZLIB_STATIC_LIB})
     else()
+      message(STATUS "STARDS zlib: shared (no PIC static libz.a in CONDA_PREFIX)")
       find_package(ZLIB REQUIRED)
       target_include_directories(usgscsm_stards INTERFACE ${ZLIB_INCLUDE_DIRS})
       target_link_libraries(usgscsm_stards INTERFACE ${ZLIB_LIBRARIES})
