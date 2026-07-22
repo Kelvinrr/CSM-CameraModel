@@ -64,9 +64,13 @@ endif()
 ExternalProject_Add(openssl_ep
   SOURCE_DIR      "${OPENSSL_SRC_DIR}"
   BINARY_DIR      "${OPENSSL_BUILD}"
+  # --libdir=lib forces the install layout to ${prefix}/lib on every platform.
+  # Without it, OpenSSL defaults to lib64 on many 64-bit Linux distros, which
+  # breaks the hardcoded lib/ paths below (and the ones curl is handed).
   CONFIGURE_COMMAND
     ${OPENSSL_SRC_DIR}/Configure ${OPENSSL_TARGET} no-shared no-tests no-docs no-apps
       no-legacy no-engine --prefix=${OPENSSL_INSTALL} --openssldir=${OPENSSL_INSTALL}/ssl
+      --libdir=lib
   BUILD_COMMAND   make build_generated COMMAND ${OPENSSL_BUILD_LIBS}
   INSTALL_COMMAND make install_dev
   BUILD_BYPRODUCTS ${OPENSSL_BYPRODUCTS}

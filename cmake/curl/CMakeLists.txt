@@ -56,6 +56,9 @@ ExternalProject_Add(curl_ep
   DEPENDS       ${CURL_TLS_DEPENDS}
   CMAKE_ARGS
     -DCMAKE_INSTALL_PREFIX=${CURL_INSTALL}
+    # Force ${prefix}/lib. Without it, GNUInstallDirs installs to lib64 on many
+    # 64-bit Linux distros, breaking the hardcoded lib/libcurl.a path below.
+    -DCMAKE_INSTALL_LIBDIR=lib
     -DCMAKE_BUILD_TYPE=Release
     -DCMAKE_POSITION_INDEPENDENT_CODE=ON
     -DBUILD_SHARED_LIBS=OFF

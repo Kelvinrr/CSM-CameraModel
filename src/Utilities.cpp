@@ -14,6 +14,35 @@
 #endif
 
 #ifdef USGSCSM_ENABLE_STARDS
+// stards.h re-#includes these standard/third-party headers *inside*
+// `namespace star` (under its ENABLE_CURL / ENABLE_S3 guards). On libstdc++
+// that makes the compiler parse e.g. std::optional as star::std::optional and
+// the whole translation unit fails. Pull them in here at global scope first;
+// their include guards then turn the in-namespace re-includes into no-ops.
+// TODO: fix upstream in stards.h by hoisting these includes above the
+// `namespace star {` line, and drop this shim.
+#include <chrono>
+#include <ctime>
+#include <fstream>
+#include <iomanip>
+#include <iostream>
+#include <memory>
+#include <optional>
+#include <sstream>
+#include <streambuf>
+#include <string>
+#include <tuple>
+#include <vector>
+#ifndef _WIN32
+#include <dirent.h>
+#endif
+#ifdef ENABLE_CURL
+#include <curl/curl.h>
+#endif
+#ifdef ENABLE_S3
+#include <openssl/hmac.h>
+#include <openssl/sha.h>
+#endif
 #include "stards.h"
 #endif
 
