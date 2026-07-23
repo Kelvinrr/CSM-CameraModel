@@ -28,3 +28,6 @@
 [submodule "external/curl"]
 	path = external/curl
 	url = https://github.com/curl/curl
+[submodule "external/zlib"]
+	path = external/zlib
+	url = https://github.com/madler/zlib

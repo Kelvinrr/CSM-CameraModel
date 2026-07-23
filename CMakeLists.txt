@@ -851,42 +851,29 @@ if(USGSCSM_ENABLE_STARDS)
 
   if(EMSCRIPTEN)
     # zlib from the emscripten port (-sUSE_ZLIB=1 is a compile+link flag, not an
-    # archive). curl/S3 (native static ExternalProject builds using macOS
-    # SecureTransport + OpenSSL) do not apply to a browser sandbox, so STARDS is
+    # archive). curl/S3 (native static ExternalProject builds using the OS TLS
+    # backend + OpenSSL) do not apply to a browser sandbox, so STARDS is
     # local-file only (zlib + lz4) under WASM -- all a browser consumer can read.
     target_compile_definitions(usgscsm_stards INTERFACE ENABLE_ZLIB)
     target_compile_options(usgscsm_stards INTERFACE "-sUSE_ZLIB=1")
     target_link_options(usgscsm_stards INTERFACE "-sUSE_ZLIB=1")
   else()
-    # Native: prefer conda's static libz.a (baked in, no runtime dylib), else
-    # fall back to shared zlib. The static search is restricted to CONDA_PREFIX
-    # via NO_DEFAULT_PATH: a system libz.a (e.g. Ubuntu's zlib1g-dev at
-    # /usr/lib/<triple>/libz.a) is built without -fPIC and cannot be linked into
-    # the shared libusgscsm.so ("relocation ... can not be used when making a
-    # shared object"), so it must never be picked up. Only conda's PIC static --
-    # or, failing that, the shared lib -- is acceptable. HINTS/PATHS are searched
-    # before the system dirs, but NO_DEFAULT_PATH is what actually keeps the
-    # non-PIC system archive out of the running entirely.
-    target_compile_definitions(usgscsm_stards INTERFACE ENABLE_ZLIB)
-    find_path(ZLIB_STATIC_INCLUDE_DIR zlib.h HINTS ENV CONDA_PREFIX PATH_SUFFIXES include NO_DEFAULT_PATH)
-    find_library(ZLIB_STATIC_LIB NAMES libz.a HINTS ENV CONDA_PREFIX PATH_SUFFIXES lib NO_DEFAULT_PATH)
-    if(ZLIB_STATIC_LIB AND ZLIB_STATIC_INCLUDE_DIR)
-      message(STATUS "STARDS zlib: static ${ZLIB_STATIC_LIB}")
-      target_include_directories(usgscsm_stards INTERFACE ${ZLIB_STATIC_INCLUDE_DIR})
-      target_link_libraries(usgscsm_stards INTERFACE ${ZLIB_STATIC_LIB})
-    else()
-      message(STATUS "STARDS zlib: shared (no PIC static libz.a in CONDA_PREFIX)")
-      find_package(ZLIB REQUIRED)
-      target_include_directories(usgscsm_stards INTERFACE ${ZLIB_INCLUDE_DIRS})
-      target_link_libraries(usgscsm_stards INTERFACE ${ZLIB_LIBRARIES})
-    endif()
-
-    # curl (vsicurl/HTTP) + OpenSSL (S3 SigV4, and TLS for curl on Linux), both
-    # vendored static. OpenSSL is configured first so curl can link against it.
+    # Native (Windows, macOS, Linux): every STARDS dependency is built from a
+    # vendored submodule as a static lib and baked into libusgscsm, so the
+    # dlopen'd plugin carries no non-system runtime library on any platform:
+    #   * zlib      -- vendored, static (cmake/zlib).
+    #   * OpenSSL   -- vendored libcrypto (S3 SigV4 SHA256/HMAC), static, plus
+    #                  libssl only on Linux for curl's TLS (cmake/openssl).
+    #   * curl      -- vendored, static, OS-native TLS backend: SecureTransport
+    #                  (macOS), Schannel (Windows), OpenSSL (Linux) (cmake/curl).
+    # OpenSSL is configured before curl so curl can link the static OpenSSL on
+    # Linux. The only runtime dependencies that remain are OS-provided system
+    # libraries (Win32 DLLs / libSystem / glibc), never a shipped third party.
+    add_subdirectory(cmake/zlib "${CMAKE_CURRENT_BINARY_DIR}/zlib")
     add_subdirectory(cmake/openssl "${CMAKE_CURRENT_BINARY_DIR}/openssl")
     add_subdirectory(cmake/curl "${CMAKE_CURRENT_BINARY_DIR}/curl")
-    target_compile_definitions(usgscsm_stards INTERFACE ENABLE_CURL ENABLE_S3)
-    target_link_libraries(usgscsm_stards INTERFACE usgscsm_curl usgscsm_crypto)
+    target_compile_definitions(usgscsm_stards INTERFACE ENABLE_ZLIB ENABLE_CURL ENABLE_S3)
+    target_link_libraries(usgscsm_stards INTERFACE usgscsm_zlib usgscsm_curl usgscsm_crypto)
   endif()
 
   # Gate that un-guards the STARDS code in usgscsm's sources. Link the STARDS
