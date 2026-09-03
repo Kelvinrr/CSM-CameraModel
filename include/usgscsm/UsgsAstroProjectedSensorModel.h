@@ -25,9 +25,6 @@ OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
 #ifndef INCLUDE_USGSCSM_USGSASTROPROJECTEDSENSORMODEL_H_
 #define INCLUDE_USGSCSM_USGSASTROPROJECTEDSENSORMODEL_H_
 
-#ifndef __EMSCRIPTEN__
-// ProjectedSensorModel requires PROJ library which is not available in WASM builds
-
 #include <csm/RasterGM.h>
 #include <csm/SettableEllipsoid.h>
 
