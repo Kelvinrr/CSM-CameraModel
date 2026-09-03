@@ -19,8 +19,20 @@ if(NOT EXISTS "${ZLIB_SRC_DIR}/zlib.h")
     "Run: git submodule update --init --recursive")
 endif()
 
-# zlib ships a usable checked-in zconf.h, so no configure step is needed. These
-# are the core compression/decompression sources (the gz* file helpers are
+# zlib ships a usable checked-in zconf.h, so no configure step is needed -- with
+# one exception. Upstream's own CMake build generates zconf.h from
+# zconf.h.cmakein and stamps Z_HAVE_UNISTD_H into it (#cmakedefine); the
+# checked-in copy leaves it undefined, so <unistd.h> is never pulled in. That
+# makes gzlib.c's LSEEK -> lseek an implicit declaration, which clang 16+
+# (Xcode 16 on the macOS runners) rejects outright rather than warning about:
+#   gzlib.c:242:9: error: call to undeclared function 'lseek'
+# Probe for the header and define the macro ourselves. PUBLIC so consumers parse
+# zconf.h exactly as the library was compiled -- it also decides whether z_off_t
+# is off_t, which is part of the gzseek/gztell signatures.
+include(CheckIncludeFile)
+check_include_file(unistd.h USGSCSM_ZLIB_HAVE_UNISTD_H)
+
+# These are the core compression/decompression sources (the gz* file helpers are
 # included so STARDS can read gzip-wrapped streams).
 add_library(usgscsm_zlib STATIC
     "${ZLIB_SRC_DIR}/adler32.c"
@@ -45,6 +57,10 @@ add_library(usgscsm_zlib STATIC
 set_target_properties(usgscsm_zlib PROPERTIES
     POSITION_INDEPENDENT_CODE ON
     C_VISIBILITY_PRESET hidden)
+
+if(USGSCSM_ZLIB_HAVE_UNISTD_H)
+  target_compile_definitions(usgscsm_zlib PUBLIC Z_HAVE_UNISTD_H)
+endif()
 
 # On Windows, silence zlib's CRT deprecation warnings (fopen/sprintf) so a
 # warnings-as-errors consumer build doesn't trip on vendored code.

@@ -37,6 +37,18 @@
 #include <dirent.h>
 #endif
 #ifdef ENABLE_CURL
+// On Windows curl.h drags in <winsock2.h> -> <windows.h>, whose min/max macros
+// would then break every std::min/std::max in stards.h. The build also sets
+// these on the usgscsm_stards target, but keep them here so this include block
+// is correct on its own regardless of who compiles it.
+#ifdef _WIN32
+#  ifndef WIN32_LEAN_AND_MEAN
+#    define WIN32_LEAN_AND_MEAN
+#  endif
+#  ifndef NOMINMAX
+#    define NOMINMAX
+#  endif
+#endif
 #include <curl/curl.h>
 #endif
 #ifdef ENABLE_S3

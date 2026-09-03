@@ -844,6 +844,19 @@ if(USGSCSM_ENABLE_STARDS)
   add_library(usgscsm_stards INTERFACE)
   target_include_directories(usgscsm_stards INTERFACE "${STARDS_INCLUDE_DIR}")
 
+  # On Windows <windef.h> -- reached transitively via <curl/curl.h> ->
+  # <winsock2.h> -> <windows.h> -- #defines function-like min/max macros that
+  # mangle the std::min/std::max/std::numeric_limits<>::max() calls in stards.h
+  # ("error C2589: '(': illegal token on right side of '::'"). stards.h defines
+  # NOMINMAX itself, but only immediately before its own curl include, which is
+  # too late once a consumer's translation unit has already included
+  # <curl/curl.h> at global scope (src/Utilities.cpp does, deliberately, to keep
+  # third-party declarations out of `namespace star`). Set it on the target so no
+  # include order can defeat it; PROJ does the same for its own sources above.
+  if(WIN32)
+    target_compile_definitions(usgscsm_stards INTERFACE NOMINMAX WIN32_LEAN_AND_MEAN)
+  endif()
+
   # Compression is always available. lz4 is vendored (compiles to WASM too).
   add_subdirectory(cmake/lz4 "${CMAKE_CURRENT_BINARY_DIR}/lz4")
   target_compile_definitions(usgscsm_stards INTERFACE ENABLE_LZ4)
