@@ -123,7 +123,9 @@ set_target_properties(usgscsm_curl PROPERTIES
 #   * Windows -- Schannel/SSPI + Winsock OS import libs (all system-provided, so
 #                no third-party runtime DLL): ws2_32 (sockets), wldap32 (LDAP
 #                stubs), crypt32/secur32 (Schannel), advapi32, bcrypt, normaliz
-#                (IDN). These ship with Windows.
+#                (IDN), iphlpapi (if_nametoindex, called from curl's peer.c to
+#                turn a "%interface" suffix into an IPv6 scope id). These ship
+#                with Windows.
 #   * Linux   -- the vendored static OpenSSL (libssl+libcrypto).
 if(APPLE)
   target_link_libraries(usgscsm_curl INTERFACE
@@ -132,7 +134,7 @@ if(APPLE)
       "-framework Security")
 elseif(WIN32)
   target_link_libraries(usgscsm_curl INTERFACE
-      ws2_32 wldap32 crypt32 secur32 advapi32 bcrypt normaliz)
+      ws2_32 wldap32 crypt32 secur32 advapi32 bcrypt normaliz iphlpapi)
 else()
   target_link_libraries(usgscsm_curl INTERFACE usgscsm_ssl usgscsm_crypto)
 endif()
