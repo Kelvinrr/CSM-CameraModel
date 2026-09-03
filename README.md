@@ -4,15 +4,15 @@
 
 # USGSCSM
 
-[![npm version](https://img.shields.io/npm/v/usgscsm-wasm.svg)](https://www.npmjs.com/package/usgscsm-wasm)
-[![npm downloads](https://img.shields.io/npm/dm/usgscsm-wasm.svg)](https://www.npmjs.com/package/usgscsm-wasm)
+[![npm version](https://img.shields.io/npm/v/@usgs-astrogeology/usgscsm.svg)](https://www.npmjs.com/package/@usgs-astrogeology/usgscsm)
+[![npm downloads](https://img.shields.io/npm/dm/@usgs-astrogeology/usgscsm.svg)](https://www.npmjs.com/package/@usgs-astrogeology/usgscsm)
 [![GitHub release](https://img.shields.io/github/v/release/USGS-Astrogeology/usgscsm)](https://github.com/USGS-Astrogeology/usgscsm/releases)
 
-**NPM Package:** [`usgscsm-wasm`](https://www.npmjs.com/package/usgscsm-wasm)
+**NPM Package:** [`@usgs-astrogeology/usgscsm`](https://www.npmjs.com/package/@usgs-astrogeology/usgscsm)
 
 **CDN Links:**
-- jsDelivr: `https://cdn.jsdelivr.net/npm/usgscsm-wasm/dist/usgscsm.js`
-- unpkg: `https://unpkg.com/usgscsm-wasm/dist/usgscsm.js`
+- jsDelivr: `https://cdn.jsdelivr.net/npm/@usgs-astrogeology/usgscsm/dist/usgscsm.js`
+- unpkg: `https://unpkg.com/@usgs-astrogeology/usgscsm/dist/usgscsm.js`
 
 This library provides *Community Sensor Model (CSM)*-compliant sensor models
 created by the USGS Astrogeology Science Center.
@@ -116,23 +116,24 @@ log level is set to *debug* or *trace*.
 * cmake 3.15 or newer
 * GNU-compatible Make
 * a C++11 compliant compiler
+* JSON, ALE, and PROJ (internal or external)
+* CSM
 
-This repository has all of its external C++ dependencies included in it. The
-excellent header-only JSON library
-[JSON for Modern C++](https://github.com/nlohmann/json) is included directly in
-the source code. The other three dependencies, The Abstraction Library for
-Ephemerides, the CSM API library, and googletest are included as git submodules.
-When you clone this library make sure you add the `--recursive` flag to your
-`git clone` command. Alternatively, you can run
-`git submodule update --init --recursive` after cloning.
+#### Internal Dependencies (git submodules)
 
-You can also install the build requirements using Conda with the provided
-`environment.yml` file. The following commands will create a new environment
-to build against. Note that googletest cannot be installed via anaconda and must
-be available within the source code. You can remove the googletest dependency
-by disabling the tests.
+`JSON`, `ALE`, and `PROJ` must be built-in for the release, so they are included as git submodules.  `gtest` is also included as a git submodule for development.
 
-```
+To clone the submodules as well when cloning, add the `--recurse-submodules` flag:  
+`git clone --recurse-submodules <repo link>`  
+
+Or, after cloning, run:  
+`git submodule update --init --recursive`
+
+#### External Dependencies (conda)
+
+The rest of the dependencies (or, if not testing/building for release, all of the dependencies) are listed in the environment.yml and can be installed with conda:
+
+```sh
 conda env create -n usgscsm -f environment.yml
 ```
 
@@ -176,24 +177,26 @@ For more information see: [ClangFormat](https://clang.llvm.org/docs/ClangFormat.
 To check for compliance, run: `cpplint file.cpp` and ignore errors in the list of exclusions above.
 For more information, see: [cpplint](https://github.com/cpplint/cpplint).
 
-## WebAssembly Support
+## WebAssembly Usage
+
+See [Astro Software Docs](https://astrogeology.usgs.gov/docs/getting-started/csm-stack/usgscsm-wasm-bindings/) for more details and examples.
 
 USGSCSM can be compiled to WebAssembly for use in web browsers and Node.js.
 
-### Installation
-
-**GitHub Releases (Direct Import):**
+### Option 1: Import from [jsDelivr](https://www.jsdelivr.com) CDN
 
 ```html
 <script type="module">
-  // Import directly from GitHub Release (replace v2.0.2 with latest version)
-  import USGSCSM from 'https://github.com/USGS-Astrogeology/usgscsm/releases/download/v2.0.2/usgscsm.js';
+
+  // Import from jsDelivr CDN
+  import USGSCSM from 'https://cdn.jsdelivr.net/npm/@usgs-astrogeology/usgscsm/dist/usgscsm.js';
   
   const Module = await USGSCSM();
   const model = new Module.USGSCSMModel();
   
-  // Load camera model from ISD
-  const isdJson = await fetch('camera_model.json').then(r => r.text());
+  // Fetch an ISD JSON and Load camera model from it
+  // Try swapping out the URL with your own ISD JSON's URL
+  const isdJson = await fetch('https://cdn.jsdelivr.net/gh/DOI-USGS/usgscsm/tests/data/simpleFramerISD.json').then(r => r.text());
   model.loadFromISD(isdJson, 'USGS_ASTRO_FRAME_SENSOR_MODEL');
   
   // Transform coordinates
@@ -202,6 +205,23 @@ USGSCSM can be compiled to WebAssembly for use in web browsers and Node.js.
 </script>
 ```
 
+### Option 2: Installing with NPM
+
+```sh
+# In your terminal in the project folder:
+npm install @usgs-astrogeology/usgscsm
+```
+
+Then import in your javascript like this:
+
+```js
+import usgscsm from "@usgs-astrogeology/usgscsm/"
+```
+*You'll need a Module Bundler, like [Vite](https://vite.dev/guide/)*. 
+The rest is the same as above.
+
+### Option 3: Manually Download
+
 Or download files from [GitHub Releases](https://github.com/USGS-Astrogeology/usgscsm/releases):
 - `usgscsm.js` - JavaScript module
 - `usgscsm.wasm` - WebAssembly binary
@@ -209,24 +229,37 @@ Or download files from [GitHub Releases](https://github.com/USGS-Astrogeology/us
 
 **Note:** The WASM file (`usgscsm.wasm`) must be in the same directory as the JS file.
 
-### Building for WebAssembly
+### ⚠️ You need a Server
+
+Accessing a page with USGSCSM via `file://` won't work.  Webassembly execution requires running a server:
+
+```sh
+# If you used `npm create vite@latest` for your Module Bundler:
+npm run dev
+
+# OR
+
+# Python Server
+python3 -m http.server 8080
+```
+
+
+## Building for WebAssembly
 
 **Requirements:**
 - Emscripten 3.1.58 (compatible with Binaryen 117)
 - cmake 3.15+
 
-**Setup with Conda:**
-```bash
-conda create -n usgscsm python=3.11
-conda activate usgscsm
-conda install -c conda-forge emscripten=3.1.58
-```
-
 **Build:**
 ```bash
 # Clone with submodules
-git clone --recursive https://github.com/USGS-Astrogeology/usgscsm.git
+git clone --recurse-submodules https://github.com/USGS-Astrogeology/usgscsm.git
 cd usgscsm
+
+# Create the usgscsm Conda Env and install Emscripten
+conda env create -n usgscsm -f environment.yml
+conda activate usgscsm
+conda install -c conda-forge emscripten=3.1.58
 
 # Configure and build
 mkdir wasmbuild && cd wasmbuild
@@ -319,7 +352,10 @@ tool (`--output-model-state`), or with `csm_translate`.
 
 ```javascript
 // Using npm package
-import USGSCSM from 'usgscsm-wasm';
+import USGSCSM from '@usgs-astrogeology/usgscsm';
+
+// OR using CDN
+// import USGSCSM from 'https://cdn.jsdelivr.net/npm/@usgs-astrogeology/usgscsm/dist/usgscsm.js';
 
 const Module = await USGSCSM();
 const model = new Module.USGSCSMModel();

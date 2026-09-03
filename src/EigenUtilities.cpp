@@ -1,6 +1,6 @@
 #include "EigenUtilities.h"
 
-#include <Error.h>
+#include <csm/Error.h>
 #include <Eigen/Dense>
 
 #include <iostream>

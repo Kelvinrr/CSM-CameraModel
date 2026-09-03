@@ -25,9 +25,9 @@ OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
 #ifndef INCLUDE_USGSCSM_USGSASTROLSSENSORMODEL_H_
 #define INCLUDE_USGSCSM_USGSASTROLSSENSORMODEL_H_
 
-#include <CorrelationModel.h>
-#include <RasterGM.h>
-#include <SettableEllipsoid.h>
+#include <csm/CorrelationModel.h>
+#include <csm/RasterGM.h>
+#include <csm/SettableEllipsoid.h>
 #include "Distortion.h"
 #include "VariantMap.h"
 

@@ -1508,10 +1508,10 @@ void UsgsAstroFrameSensorModel::populateModel(const VariantMap& state) {
     m_startingDetectorLine = state.get<double>("m_startingDetectorLine");
     
     LOG_TRACE( "Getting m_detectorSampleSumming");
-    m_detectorSampleSumming = state.get<int>("m_detectorSampleSumming");
+    m_detectorSampleSumming = state.get<double>("m_detectorSampleSumming");
     
     LOG_TRACE( "Getting m_detectorLineSumming");
-    m_detectorLineSumming = state.get<int>("m_detectorLineSumming");
+    m_detectorLineSumming = state.get<double>("m_detectorLineSumming");
     
     LOG_TRACE( "Getting m_focalLengthEpsilon");
     m_focalLengthEpsilon = state.get<double>("m_focalLengthEpsilon");
@@ -1810,8 +1810,7 @@ VariantMap UsgsAstroFrameSensorModel::constructStateFromIsd(
   }
 
   // get optical_distortion
-  state["m_distortionType"] =
-      getDistortionModel(ale::getDistortionModel(parsedIsd));
+  state["m_distortionType"] = getDistortionModel(parsedIsd);
   state["m_opticalDistCoeffs"] = ale::getDistortionCoeffs(parsedIsd);
 
   // get detector_center
@@ -1887,8 +1886,6 @@ VariantMap UsgsAstroFrameSensorModel::constructStateFromIsd(
       warnings->insert(warnings->end(), parsingWarnings->begin(),
                        parsingWarnings->end());
     }
-    LOG_ERROR( "ISD is invalid for creating the sensor model.");
-
     throw csm::Error(csm::Error::SENSOR_MODEL_NOT_CONSTRUCTIBLE,
                      "ISD is invalid for creating the sensor model.",
                      "UsgsAstroFrameSensorModel::constructStateFromIsd");

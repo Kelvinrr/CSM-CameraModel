@@ -1,5 +1,5 @@
 {
-  "name": "usgscsm",
+  "name": "@usgs-astrogeology/usgscsm",
   "version": "2.1.0",
   "type": "module",
   "description": "USGS Community Sensor Model (CSM) library compiled to WebAssembly for planetary photogrammetry in the browser",

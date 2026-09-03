@@ -8,10 +8,11 @@
 #include <memory>
 #include <string>
 
-#include "SettableEllipsoid.h"
-#include "CorrelationModel.h"
+#include <csm/SettableEllipsoid.h>
+#include <csm/CorrelationModel.h>
+#include <csm/RasterGM.h>
+
 #include "Distortion.h"
-#include "RasterGM.h"
 #include "Utilities.h"
 #include "VariantMap.h"
 

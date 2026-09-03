@@ -208,7 +208,6 @@ VariantMap UsgsAstroSarSensorModel::constructStateFromIsd(
     csm::Warning warn = parsingWarnings->front();
     message += warn.getMessage();
     message += "]";
-    LOG_INFO(message);
     throw csm::Error(csm::Error::SENSOR_MODEL_NOT_CONSTRUCTIBLE, message,
                      "UsgsAstroSarSensorModel::constructStateFromIsd");
   }

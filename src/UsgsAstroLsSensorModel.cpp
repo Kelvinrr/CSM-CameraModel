@@ -34,7 +34,7 @@ OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
 #include <iostream>
 #include <sstream>
 
-#include <Error.h>
+#include <csm/Error.h>
 
 #include "ale/Util.h"
 
@@ -162,8 +162,8 @@ void UsgsAstroLsSensorModel::populateModel(const VariantMap& state) {
   m_startingEphemerisTime = state.get<double>("m_startingEphemerisTime");
   m_centerEphemerisTime = state.get<double>("m_centerEphemerisTime");
 
-  m_detectorSampleSumming = state.get<int>("m_detectorSampleSumming");
-  m_detectorLineSumming = state.get<int>("m_detectorLineSumming");
+  m_detectorSampleSumming = state.get<double>("m_detectorSampleSumming");
+  m_detectorLineSumming = state.get<double>("m_detectorLineSumming");
   m_startingDetectorSample = state.get<double>("m_startingDetectorSample");
   m_startingDetectorLine = state.get<double>("m_startingDetectorLine");
   m_ikCode = state.get<int>("m_ikCode");
@@ -2865,8 +2865,7 @@ VariantMap UsgsAstroLsSensorModel::constructStateFromIsd(
       state["m_platformFlag"].dump(), state["m_ikCode"].dump(),
       state["m_zDirection"].dump());
 
-  state["m_distortionType"] =
-      getDistortionModel(ale::getDistortionModel(jsonIsd));
+  state["m_distortionType"] = getDistortionModel(jsonIsd);
   state["m_opticalDistCoeffs"] = ale::getDistortionCoeffs(jsonIsd);
   LOG_TRACE(
       "m_distortionType: {} "

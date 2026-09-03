@@ -1,7 +1,7 @@
 #include "Distortion.h"
 #include "Utilities.h"
 
-#include <Error.h>
+#include <csm/Error.h>
 #include <string>
 
 // TGO CaSSIS rational distortion helper. The model (Tulyakov/Ivanov, EPFL) is a

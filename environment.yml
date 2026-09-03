@@ -6,7 +6,7 @@ dependencies:
   - ale>=0.8.8
   - cmake>=3.15,<4.0
   - csm >= 3.1.0
-  - eigen
+  - eigen >=3,<4
   - nlohmann_json
   - proj
   - sqlite>=3.11

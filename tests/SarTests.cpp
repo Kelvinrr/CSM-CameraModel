@@ -3,7 +3,7 @@
 #include "UsgsAstroSarSensorModel.h"
 
 #include "Fixtures.h"
-#include "Warning.h"
+#include "csm/Warning.h"
 
 #include <gtest/gtest.h>
 #include <nlohmann/json.hpp>

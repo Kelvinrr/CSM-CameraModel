@@ -1,9 +1,9 @@
 #ifndef __USGS_ASTRO_SAR_SENSORMODEL_H
 #define __USGS_ASTRO_SAR_SENSORMODEL_H
 
-#include <CorrelationModel.h>
-#include <RasterGM.h>
-#include <SettableEllipsoid.h>
+#include <csm/CorrelationModel.h>
+#include <csm/RasterGM.h>
+#include <csm/SettableEllipsoid.h>
 
 #include "ale/Rotation.h"
 #include "VariantMap.h"

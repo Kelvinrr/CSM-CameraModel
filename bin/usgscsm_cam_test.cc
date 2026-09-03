@@ -23,7 +23,7 @@
 //   and compare with the original pixel values.
 
 #include <UsgsAstroPlugin.h>
-#include <RasterGM.h>
+#include <csm/RasterGM.h>
 #include <UsgsAstroLsSensorModel.h>
 #include <Utilities.h>
 

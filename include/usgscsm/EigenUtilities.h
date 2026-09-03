@@ -4,7 +4,7 @@
 // Do not include Eigen header files here as those will slow down the compilation
 // whereever this header file is included.
 
-#include <csm.h>
+#include <csm/csm.h>
 
 namespace usgscsm {
   

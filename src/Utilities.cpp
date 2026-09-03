@@ -1,6 +1,6 @@
 #include "Utilities.h"
 
-#include <Error.h>
+#include <csm/Error.h>
 #include <cmath>
 #include <stack>
 #include <stdexcept>
@@ -1838,58 +1838,57 @@ double getSemiMinorRadius(json isd, csm::WarningList *list) {
 }
 
 /**
- * @description Converts the distortion model name from the ISD JSON object to 
- * the enumeration type. This function searches the "optical_distortion" field 
- * for a key that matches a known distortion model name and converts it to the 
- * corresponding DistortionType enum. Defaults to DistortionType::TRANSVERSE if 
- * no match is found or the model cannot be parsed.
+ * @description Converts the distortion model name from the ISD JSON object to
+ * the enumeration type. This function searches the "optical_distortion" field
+ * for a key that matches a known distortion model name and converts it to the
+ * corresponding DistortionType enum. Throws std::runtime_error if the
+ * "optical_distortion" field is missing or its model name is not recognized,
+ * rather than silently defaulting to a distortion type.
  *
  * @param isd The ISD JSON object containing the optical distortion information.
- * @param list Pointer to a csm::WarningList where warnings are added if the 
- * distortion model name cannot be parsed from the ISD. This parameter is 
- * optional; pass nullptr if you do not need to capture warnings.
+ * @param list Unused; retained for API compatibility.
  *
- * @return The DistortionType enum corresponding to the distortion model found 
- * in the ISD. Returns DistortionType::TRANSVERSE by default if the model name 
- * cannot be parsed or is not recognized.
+ * @return The DistortionType enum corresponding to the distortion model found
+ * in the ISD.
  */
 DistortionType getDistortionModel(json isd, csm::WarningList *list) {
+  std::string distortion;
+
+  // Only the JSON access is guarded here, so an unrecognized model name is
+  // reported below rather than being masked by this handler.
   try {
     json distortion_subset = isd.at("optical_distortion");
-
     json::iterator it = distortion_subset.begin();
-
-    std::string distortion = (std::string)it.key();
-
-    if (distortion.compare("transverse") == 0) {
-      return DistortionType::TRANSVERSE;
-    } else if (distortion.compare("radial") == 0) {
-      return DistortionType::RADIAL;
-    } else if (distortion.compare("kaguyalism") == 0) {
-      return DistortionType::KAGUYALISM;
-    } else if (distortion.compare("dawnfc") == 0) {
-      return DistortionType::DAWNFC;
-    } else if (distortion.compare("lrolrocnac") == 0) {
-      return DistortionType::LROLROCNAC;
-    } else if (distortion.compare("cahvor") == 0) {
-      return DistortionType::CAHVOR;
-    } else if (distortion.compare("lunarorbiter") == 0) {
-      return DistortionType::LUNARORBITER;
-    } else if (distortion.compare("radtan") == 0) {
-      return DistortionType::RADTAN;
-    } else if (distortion.compare("kplo_shadowcam") == 0) {
-      return DistortionType::KPLOSHADOWCAM;
-    } else if (distortion.compare("cassis") == 0) {
-      return DistortionType::CASSIS;
-    }
+    distortion = (std::string)it.key();
   } catch (...) {
-    if (list) {
-      list->push_back(csm::Warning(csm::Warning::DATA_NOT_AVAILABLE,
-                                   "Could not parse the distortion model.",
-                                   "Utilities::getDistortionModel()"));
-    }
+    throw std::runtime_error("Could not parse the distortion model.");
   }
-  return DistortionType::TRANSVERSE;
+
+  if (distortion.compare("transverse") == 0) {
+    return DistortionType::TRANSVERSE;
+  } else if (distortion.compare("radial") == 0) {
+    return DistortionType::RADIAL;
+  } else if (distortion.compare("kaguyalism") == 0) {
+    return DistortionType::KAGUYALISM;
+  } else if (distortion.compare("dawnfc") == 0) {
+    return DistortionType::DAWNFC;
+  } else if (distortion.compare("lrolrocnac") == 0) {
+    return DistortionType::LROLROCNAC;
+  } else if (distortion.compare("cahvor") == 0) {
+    return DistortionType::CAHVOR;
+  } else if (distortion.compare("lunarorbiter") == 0) {
+    return DistortionType::LUNARORBITER;
+  } else if (distortion.compare("radtan") == 0) {
+    return DistortionType::RADTAN;
+  } else if (distortion.compare("kplo_shadowcam") == 0) {
+    return DistortionType::KPLOSHADOWCAM;
+  } else if (distortion.compare("cassis") == 0) {
+    return DistortionType::CASSIS;
+  }
+
+  // Throw on an unknown distortion model rather than silently defaulting to
+  // TRANSVERSE, matching ale's getDistortionModel.
+  throw std::runtime_error("Unsupported distortion model: " + distortion);
 }
 
 /**

@@ -14,9 +14,9 @@
 #include <ale/Rotation.h>
 #include <ale/Vectors.h>
 
-#include <RasterGM.h>
-#include <Warning.h>
-#include <csm.h>
+#include <csm/RasterGM.h>
+#include <csm/Warning.h>
+#include <csm/csm.h>
 
 // Compute distorted focalPlane coordinates in mm
 void computeDistortedFocalPlaneCoordinates(
