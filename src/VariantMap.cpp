@@ -163,9 +163,7 @@ std::vector<int> VariantMap::get<std::vector<int>>(const std::string& key) const
       }
       return ints;
     } catch (const std::exception&) {
-      // A scalar stored for a vector-typed key (e.g. a size-1 array coming from
-      // a STARDS file, where a 1-element array is indistinguishable from a
-      // scalar) is treated as a single-element vector.
+      // A scalar reads back as a size-1 vector: STARDS cannot distinguish the two.
       try {
         return std::vector<int>{std::get<int>(it->second)};
       } catch (const std::exception&) {}
@@ -197,9 +195,7 @@ std::vector<double> VariantMap::get<std::vector<double>>(const std::string& key)
       }
       return doubles;
     } catch (const std::exception&) {
-      // A scalar stored for a vector-typed key (e.g. a size-1 array coming from
-      // a STARDS file, where a 1-element array is indistinguishable from a
-      // scalar) is treated as a single-element vector.
+      // A scalar reads back as a size-1 vector: STARDS cannot distinguish the two.
       try {
         return std::vector<double>{std::get<double>(it->second)};
       } catch (const std::exception&) {}

@@ -2421,10 +2421,8 @@ VariantMap UsgsAstroPushFrameSensorModel::constructStateFromIsd(
       "m_maxElevation: {}",
       state["m_minElevation"].dump(), state["m_maxElevation"].dump());
 
-  // Default parameter types to REAL. Stored as ints to match populateModel and
-  // getModelMap, which read/write m_parameterType as a vector<int> of enum
-  // values. (Previously written as strings, which variantMapFromJson silently
-  // dropped, leaving the reset() default in place.)
+  // Stored as ints, not strings: populateModel and getModelMap read
+  // m_parameterType as a vector<int>, and variantMapFromJson drops string arrays.
   state["m_parameterType"] =
       std::vector<int>(NUM_PARAMETERS, static_cast<int>(csm::param::REAL));
 

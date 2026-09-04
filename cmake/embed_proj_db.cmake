@@ -1,12 +1,5 @@
-# Generate a C source that embeds proj.db as a byte array, so the PROJ database
-# is compiled directly into libusgscsm and served from memory (no loose file).
-#
-# Invoked at build time with:
-#   -DPROJ_DB=<path to proj.db>  -DOUT_C=<output .c path>
-#
-# Produces a file defining:
-#   const unsigned char usgscsm_proj_db_data[];
-#   const unsigned long long usgscsm_proj_db_size;
+# Generate a C source embedding proj.db as a byte array (see ProjDbData.h).
+# Invoked at build time with -DPROJ_DB=<proj.db> -DOUT_C=<output .cpp>.
 
 file(READ "${PROJ_DB}" _hex HEX)
 

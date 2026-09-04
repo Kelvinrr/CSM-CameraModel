@@ -19,14 +19,38 @@ add_executable(runCSMCameraModelTests
                ../external/ale/src/Rotation.cpp
                ../external/ale/src/InterpUtils.cpp)
 
-# When STARDS support is compiled into usgscsm, the tests need the same define
-# (to un-guard StardsTests.cpp) and the STARDS reader header on their include
-# path (StardsTests.cpp calls variantMapFromStards, which uses star:: types).
-# Linking the usgscsm_stards INTERFACE target supplies both the include dir and
-# the ENABLE_* feature defines.
+# StardsTests.cpp needs the same define to un-guard, plus the star:: headers and
+# feature defines that the usgscsm_stards INTERFACE target carries.
 if(USGSCSM_ENABLE_STARDS)
   target_compile_definitions(runCSMCameraModelTests PRIVATE USGSCSM_ENABLE_STARDS)
   target_link_libraries(runCSMCameraModelTests usgscsm_stards)
+
+  # Derived from ISDs already in data/, so not committed. The .stards is converted
+  # from the generated JSON state, not the ISD, so the two agree to
+  # EXPECT_DOUBLE_EQ. data/frameState.stards stays committed as a format golden.
+  set(STARDS_FIXTURE_DIR "${CMAKE_CURRENT_BINARY_DIR}/stards_fixtures")
+  set(STARDS_FIXTURES
+      "${STARDS_FIXTURE_DIR}/lineScanState.json"
+      "${STARDS_FIXTURE_DIR}/lineScanState.stards"
+      "${STARDS_FIXTURE_DIR}/frameState.json")
+  add_custom_command(
+    OUTPUT ${STARDS_FIXTURES}
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${STARDS_FIXTURE_DIR}"
+    COMMAND csm_translate "${CMAKE_CURRENT_SOURCE_DIR}/data/toughLroNacLineScan.json"
+                          "${STARDS_FIXTURE_DIR}/lineScanState.json"
+    COMMAND csm_translate "${STARDS_FIXTURE_DIR}/lineScanState.json"
+                          "${STARDS_FIXTURE_DIR}/lineScanState.stards"
+    COMMAND csm_translate "${CMAKE_CURRENT_SOURCE_DIR}/data/simpleFramerISD.json"
+                          "${STARDS_FIXTURE_DIR}/frameState.json"
+    DEPENDS csm_translate
+            "${CMAKE_CURRENT_SOURCE_DIR}/data/toughLroNacLineScan.json"
+            "${CMAKE_CURRENT_SOURCE_DIR}/data/simpleFramerISD.json"
+    COMMENT "Generating STARDS test fixtures from existing ISDs"
+    VERBATIM)
+  add_custom_target(stards_test_fixtures DEPENDS ${STARDS_FIXTURES})
+  add_dependencies(runCSMCameraModelTests stards_test_fixtures)
+  target_compile_definitions(runCSMCameraModelTests PRIVATE
+                             STARDS_FIXTURE_DIR="${STARDS_FIXTURE_DIR}")
 endif()
 if(WIN32)
   option(CMAKE_USE_WIN32_THREADS_INIT "using WIN32 threads" ON)

@@ -1,16 +1,6 @@
-# Static build of libcurl, built at configure/build time from the pristine
-# submodule at external/curl (pinned to curl-8_11_0), so it is baked into
-# libusgscsm (a CSM plugin cannot depend on runtime dylibs). This build glue
-# lives in the main repo so the submodule stays unmodified.
-#
-# STARDS uses libcurl only for simple HTTP(S) GET/HEAD/PUT of STARDS files
-# (vsicurl / S3 transport). TLS backend is platform-specific, always the OS's own
-# so the plugin ships no third-party TLS runtime:
-#   * macOS   -- SecureTransport (no OpenSSL/libssl needed).
-#   * Windows -- Schannel (Windows native SSL/TLS via SSPI; no OpenSSL needed).
-#   * Linux   -- the vendored static OpenSSL (libssl+libcrypto) from cmake/openssl.
-# Protocols and optional features are disabled down to just HTTP/HTTPS to keep
-# the static archive small and dependency-free.
+# Static libcurl, built from the pristine submodule at external/curl so it is
+# baked into libusgscsm. STARDS uses it only for HTTP(S) GET/HEAD/PUT of STARDS
+# files, so everything else is disabled.
 
 cmake_minimum_required(VERSION 3.11)
 include(ExternalProject)
@@ -34,12 +24,8 @@ else()
   set(CURL_STATIC_LIB "${CURL_INSTALL}/lib/libcurl.a")
 endif()
 
-# TLS backend selection -- always the OS-native backend so no third-party TLS
-# runtime is required:
-#   * macOS   -- SecureTransport.
-#   * Windows -- Schannel (also enables Windows SSPI, which it requires).
-#   * Linux   -- the vendored static OpenSSL from cmake/openssl (USGSCSM_OPENSSL_*
-#                are set in the parent scope there).
+# TLS backend: the OS-native one where there is one (SecureTransport on macOS,
+# Schannel on Windows), else the vendored static OpenSSL from cmake/openssl.
 if(APPLE)
   set(CURL_TLS_ARGS
       -DCURL_USE_SECTRANSP=ON
@@ -64,16 +50,15 @@ else()
   set(CURL_TLS_DEPENDS openssl_ep)
 endif()
 
-# Build libcurl with CMake: static only, HTTP/HTTPS only. Configured from a
-# separate build directory (out-of-tree) so the submodule source stays pristine.
+# Built out-of-tree so the submodule source stays pristine.
 ExternalProject_Add(curl_ep
   SOURCE_DIR    "${CURL_SRC_DIR}"
   BINARY_DIR    "${CURL_BUILD}"
   DEPENDS       ${CURL_TLS_DEPENDS}
   CMAKE_ARGS
     -DCMAKE_INSTALL_PREFIX=${CURL_INSTALL}
-    # Force ${prefix}/lib. Without it, GNUInstallDirs installs to lib64 on many
-    # 64-bit Linux distros, breaking the hardcoded lib/libcurl.a path below.
+    # Force ${prefix}/lib: GNUInstallDirs otherwise uses lib64 on many 64-bit
+    # Linux distros, breaking the hardcoded lib/libcurl.a path above.
     -DCMAKE_INSTALL_LIBDIR=lib
     -DCMAKE_BUILD_TYPE=Release
     -DCMAKE_POSITION_INDEPENDENT_CODE=ON
@@ -110,29 +95,22 @@ ExternalProject_Add(curl_ep
 
 file(MAKE_DIRECTORY "${CURL_INCLUDE_DIR}")
 
-# IMPORTED target. Static libcurl needs CURL_STATICLIB defined by consumers so
-# the headers don't emit dllimport/visibility decorations.
+# Consumers need CURL_STATICLIB so the headers don't emit dllimport decorations.
 add_library(usgscsm_curl STATIC IMPORTED GLOBAL)
 set_target_properties(usgscsm_curl PROPERTIES
     IMPORTED_LOCATION "${CURL_STATIC_LIB}"
     INTERFACE_INCLUDE_DIRECTORIES "${CURL_INCLUDE_DIR}"
     INTERFACE_COMPILE_DEFINITIONS "CURL_STATICLIB")
 
-# Platform link dependencies the static libcurl pulls in at the final link:
-#   * macOS   -- SecureTransport frameworks.
-#   * Windows -- Schannel/SSPI + Winsock OS import libs (all system-provided, so
-#                no third-party runtime DLL): ws2_32 (sockets), wldap32 (LDAP
-#                stubs), crypt32/secur32 (Schannel), advapi32, bcrypt, normaliz
-#                (IDN), iphlpapi (if_nametoindex, called from curl's peer.c to
-#                turn a "%interface" suffix into an IPv6 scope id). These ship
-#                with Windows.
-#   * Linux   -- the vendored static OpenSSL (libssl+libcrypto).
+# Platform link dependencies static libcurl pulls in at the final link. The
+# Windows ones are all OS import libs, so no third-party runtime DLL is added.
 if(APPLE)
   target_link_libraries(usgscsm_curl INTERFACE
       "-framework CoreFoundation"
       "-framework SystemConfiguration"
       "-framework Security")
 elseif(WIN32)
+  # iphlpapi is for if_nametoindex, called from curl's peer.c.
   target_link_libraries(usgscsm_curl INTERFACE
       ws2_32 wldap32 crypt32 secur32 advapi32 bcrypt normaliz iphlpapi)
 else()

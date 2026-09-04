@@ -1,8 +1,5 @@
-# Static build of the LZ4 compression library. LZ4 is vendored as an unmodified
-# submodule at external/lz4 (pinned to v1.10.0); this build glue lives in the
-# main repo so the submodule stays pristine. Only the core library sources
-# (external/lz4/lib/) are compiled, statically, directly into libusgscsm --
-# a CSM plugin is dlopen'd at runtime and cannot depend on runtime dylibs.
+# Static LZ4, built from the pristine submodule at external/lz4 so it is baked
+# into libusgscsm. STARDS uses it to (de)compress state files.
 
 cmake_minimum_required(VERSION 3.10)
 
@@ -21,8 +18,7 @@ add_library(usgscsm_lz4 STATIC
     "${LZ4_SRC_DIR}/xxhash.c"
 )
 
-# Position-independent code so the static lib can be linked into the usgscsm
-# shared library.
+# PIC so the static lib links into the usgscsm shared library.
 set_target_properties(usgscsm_lz4 PROPERTIES
     POSITION_INDEPENDENT_CODE ON
     C_VISIBILITY_PRESET hidden)

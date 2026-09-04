@@ -1,9 +1,6 @@
-# Minimal NATIVE (host) build of the sqlite3 command-line shell, used only to
-# generate proj.db during a cross-compiled (e.g. Emscripten/WASM) build where
-# the in-tree usgscsm_sqlite3_shell would itself be cross-compiled and thus
-# unable to run on the host. Built via ExternalProject with the host toolchain.
-#
-# SQLITE3_SRC_DIR (the vendored amalgamation dir) is passed in by the caller.
+# Host build of the sqlite3 shell, to generate proj.db during a cross-compiled
+# build where usgscsm_sqlite3_shell cannot run. SQLITE3_SRC_DIR (the vendored
+# amalgamation dir) is passed in by the caller.
 
 cmake_minimum_required(VERSION 3.10)
 project(native_sqlite3 C)

@@ -12,17 +12,25 @@
 #include <sstream>
 #include <string>
 
-// These tests only build when STARDS support is compiled in. Without the
-// option the translation unit is intentionally empty.
+// Without STARDS support this translation unit is intentionally empty.
 #ifdef USGSCSM_ENABLE_STARDS
 
 using json = nlohmann::json;
 
 namespace {
 
-// Read a CSM model-state file and return the JSON body plus the model name.
-// Handles both the "<MODELNAME>\n<json>" form and a bare JSON state (no
-// prefix); in the latter case the model name is read from the m_modelName key.
+// Generated at build time from data/ ISDs; see tests/CMakeLists.txt.
+const std::string kLineScanJson =
+    std::string(STARDS_FIXTURE_DIR) + "/lineScanState.json";
+const std::string kLineScanStards =
+    std::string(STARDS_FIXTURE_DIR) + "/lineScanState.stards";
+const std::string kFrameJson =
+    std::string(STARDS_FIXTURE_DIR) + "/frameState.json";
+// Committed golden, so a STARDS format change still fails a test.
+const std::string kFrameStards = "data/frameState.stards";
+
+// Handles both the "<MODELNAME>\n<json>" form and a bare JSON state, where the
+// model name comes from the m_modelName key instead.
 std::string readStateBody(const std::string &path, std::string &modelName) {
   std::ifstream in(path);
   std::stringstream ss;
@@ -43,14 +51,12 @@ std::string readStateBody(const std::string &path, std::string &modelName) {
 
 }  // namespace
 
-// The VariantMap read from a STARDS state file matches the one parsed from the
-// equivalent JSON state, key for key, for both scalar and array values.
+// A STARDS state and the equivalent JSON state give the same VariantMap.
 TEST(Stards, VariantMapMatchesJsonState) {
   std::string modelName;
-  std::string jsonBody =
-      readStateBody("data/lineScanState.json.state", modelName);
+  std::string jsonBody = readStateBody(kLineScanJson, modelName);
   VariantMap fromJson = variantMapFromJson(stateAsJson(jsonBody));
-  VariantMap fromStards = variantMapFromStards("data/lineScanState.stards");
+  VariantMap fromStards = variantMapFromStards(kLineScanStards);
 
   // Every key present in the JSON state is present in the STARDS state.
   for (const std::string &key : fromJson.keys()) {
@@ -69,17 +75,15 @@ TEST(Stards, VariantMapMatchesJsonState) {
   }
 }
 
-// A line scan model built from a STARDS state produces the same projections as
-// the same model built from its JSON state.
+// A line scan model from STARDS projects identically to one from JSON.
 TEST(Stards, LineScanModelMatchesJsonState) {
   std::string modelName;
-  std::string jsonBody =
-      readStateBody("data/lineScanState.json.state", modelName);
+  std::string jsonBody = readStateBody(kLineScanJson, modelName);
 
   std::unique_ptr<csm::RasterGM> fromJson(
       getUsgsCsmModelFromJsonState(jsonBody, modelName, nullptr));
   std::unique_ptr<csm::RasterGM> fromStards(
-      getUsgsCsmModelFromStards("data/lineScanState.stards", nullptr));
+      getUsgsCsmModelFromStards(kLineScanStards, nullptr));
   ASSERT_NE(fromJson.get(), nullptr);
   ASSERT_NE(fromStards.get(), nullptr);
 
@@ -91,16 +95,15 @@ TEST(Stards, LineScanModelMatchesJsonState) {
   EXPECT_NEAR(gJson.z, gStards.z, 1e-6);
 }
 
-// A frame model built from a STARDS state produces the same projections as the
-// same model built from its JSON state.
+// A frame model from STARDS projects identically to one from JSON.
 TEST(Stards, FrameModelMatchesJsonState) {
   std::string modelName;
-  std::string jsonBody = readStateBody("data/frameState.json.state", modelName);
+  std::string jsonBody = readStateBody(kFrameJson, modelName);
 
   std::unique_ptr<csm::RasterGM> fromJson(
       getUsgsCsmModelFromJsonState(jsonBody, modelName, nullptr));
   std::unique_ptr<csm::RasterGM> fromStards(
-      getUsgsCsmModelFromStards("data/frameState.stards", nullptr));
+      getUsgsCsmModelFromStards(kFrameStards, nullptr));
   ASSERT_NE(fromJson.get(), nullptr);
   ASSERT_NE(fromStards.get(), nullptr);
 
@@ -115,7 +118,7 @@ TEST(Stards, FrameModelMatchesJsonState) {
 // The plugin routes a .stards image file through the STARDS state path.
 TEST(Stards, PluginConstructsFromStardsFile) {
   csm::Isd isd;
-  isd.setFilename("data/lineScanState.stards");
+  isd.setFilename(kLineScanStards);
   UsgsAstroPlugin plugin;
   std::unique_ptr<csm::Model> model(plugin.constructModelFromISD(
       isd, UsgsAstroLsSensorModel::_SENSOR_MODEL_NAME, nullptr));

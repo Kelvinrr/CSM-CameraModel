@@ -30,10 +30,8 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   # Override optimization flags to avoid binaryen version mismatch
   set(CMAKE_CXX_FLAGS_RELEASE "-O1 -DNDEBUG" CACHE STRING "" FORCE)
   set(CMAKE_C_FLAGS_RELEASE "-O1 -DNDEBUG" CACHE STRING "" FORCE)
-  # Conda's default compiler flags include -fstack-protector-strong, but
-  # emscripten's wasm-ld provides no __stack_chk_guard/__stack_chk_fail, so PROJ's
-  # C sources fail to link. Strip stack-protector from the inherited flags and
-  # disable it explicitly for the WASM build.
+  # wasm-ld has no __stack_chk_guard/__stack_chk_fail, so drop the
+  # -fstack-protector that conda's default flags inject.
   string(REGEX REPLACE "-fstack-protector[a-z-]*" "" CMAKE_C_FLAGS "${CMAKE_C_FLAGS}")
   string(REGEX REPLACE "-fstack-protector[a-z-]*" "" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fno-stack-protector")
@@ -52,15 +50,11 @@ set(VISIBILITY_INLINES_HIDDEN 1)
 
 # Use external or embedded dependencies
 option(USGSCSM_EXTERNAL_DEPS "If the library should be built with external or embedded dependencies" OFF)
+option(USGSCSM_ENABLE_STARDS "Build support for instantiating models from STARDS state files" ON)
 option(ENABLE_CURL "Set to build the curl components of proj" OFF)
 option(ENABLE_TIFF "Set to build the TIFF components of proj" OFF)
 option(BUILD_TESTING "Set to build the proj tests" OFF)
 option(BUILD_APPS "Set to build the proj apps" OFF)
-
-# STARDS state-file input support. Off by default: enabling it compiles the
-# header-only STARDS reader (external/stards) into usgscsm and requires the
-# STARDS compression dependencies to be available/embedded (no dynamic linking).
-option(USGSCSM_ENABLE_STARDS "Build support for instantiating models from STARDS state files" ON)
 
 # To find JSON's config file
 set (CMAKE_PREFIX_PATH "${CMAKE_SOURCE_DIR}/cmake;${CMAKE_PREFIX_PATH}")
@@ -80,26 +74,15 @@ set(USGSCSM_SRC_FILES src/UsgsAstroPlugin.cpp
 set(USGSCSM_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/include/usgscsm"
                          "${CMAKE_CURRENT_SOURCE_DIR}/include"
                          "${CMAKE_CURRENT_SOURCE_DIR}"
-                         # Submodules now live under external/; this makes the
-                         # angle/quote includes that are relative to a submodule
-                         # root resolve, e.g. #include "csm/Plugin.h".
+                         # Resolves submodule-relative includes, e.g. "csm/Plugin.h"
                          "${CMAKE_CURRENT_SOURCE_DIR}/external"
 )
-
-# CSM API library
-find_path(CSM_INCLUDE_DIR NAMES "csm/csm.h"
-                          PATHS $ENV{CONDA_PREFIX}/include/
-                          REQUIRED)
-find_library(CSM_LIBRARY csmapi PATHS $ENV{CONDA_PREFIX}/lib REQUIRED)
-message("-- Found CSM Library: ${CSM_LIBRARY}")
-message("-- Found CSM Include Directory: ${CSM_INCLUDE_DIR}")
 
 if(USGSCSM_EXTERNAL_DEPS)
   message(STATUS "Using external dependencies")
 
   # CSM API library
-  find_path(CSM_INCLUDE_DIR NAMES "csm.h"
-                            PATH_SUFFIXES "csm"
+  find_path(CSM_INCLUDE_DIR NAMES "csm/csm.h"
                             PATHS $ENV{CONDA_PREFIX}/include/
                             REQUIRED)
   find_library(CSM_LIBRARY csmapi PATHS $ENV{CONDA_PREFIX}/lib REQUIRED)
@@ -123,59 +106,49 @@ if(USGSCSM_EXTERNAL_DEPS)
 else()
   set(BUILD_SHARED_LIBS OFF)
   message(STATUS "Using embedded dependencies")
-  # CSM API library
-  add_subdirectory(external/csm)
-  # Directory holding the CSM headers (RasterGM.h, Error.h, ...). Consumers that
-  # include them bare (e.g. #include <RasterGM.h>) need this on their path.
+  # CSM API library, built static (see cmake/csm).
+  add_subdirectory(cmake/csm "${CMAKE_CURRENT_BINARY_DIR}/csm")
+  # Header dir, for sources that include the CSM headers bare (<RasterGM.h>).
   set(CSM_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/csm")
   set(CSM_LIBRARY csmapi)
 
-  # PROJ (for the projected sensor model) is built for both native and WASM.
-  # Its database, proj.db, is embedded and served from memory via a custom
-  # SQLite VFS, so no runtime file or PROJ_DATA is needed on either platform.
-  if(TRUE)
-    # First configure proj library
-    set(BUILD_SHARED_LIBS OFF)
-    set(PROJ_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/PROJ")
-    set(CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/external/PROJ/cmake ${CMAKE_MODULE_PATH})
-    set(CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/external/PROJ/src ${CMAKE_MODULE_PATH})
+  # PROJ, for the projected sensor model, built for native and WASM alike.
+  # First configure proj library
+  set(BUILD_SHARED_LIBS OFF)
+  set(PROJ_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/PROJ")
+  set(CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/external/PROJ/cmake ${CMAKE_MODULE_PATH})
+  set(CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/external/PROJ/src ${CMAKE_MODULE_PATH})
 
-    ################################################################################
-    # SQLite3 (vendored, static)
-    ################################################################################
-    # Build the vendored SQLite3 statically into the plugin (no runtime dylib) and
-    # use its command-line shell as the build-time proj.db generator, so no host
-    # sqlite3 binary or libsqlite3 dylib is required.
-    add_subdirectory(external/sqlite3)
+  ################################################################################
+  # SQLite3 (vendored, static)
+  ################################################################################
+  add_subdirectory(external/sqlite3)
 
-    if(NOT EMSCRIPTEN)
-      # Native build: the vendored shell runs on the host directly.
-      set(EXE_SQLITE3 $<TARGET_FILE:usgscsm_sqlite3_shell>)
+  if(NOT EMSCRIPTEN)
+    set(EXE_SQLITE3 $<TARGET_FILE:usgscsm_sqlite3_shell>)
+  else()
+    # A cross-compiled shell cannot generate proj.db on the host, so use a host
+    # sqlite3: one already on PATH, else a native ExternalProject build.
+    find_program(HOST_SQLITE3 sqlite3)
+    if(HOST_SQLITE3)
+      set(EXE_SQLITE3 "${HOST_SQLITE3}")
+      message(STATUS "WASM: using host sqlite3 for proj.db generation: ${EXE_SQLITE3}")
     else()
-      # WASM build: the vendored shell would be cross-compiled to WASM and cannot
-      # run on the host to generate proj.db. Use a host sqlite3 instead -- prefer
-      # one already on PATH, else build a native shell from the vendored
-      # amalgamation with the host toolchain via ExternalProject.
-      find_program(HOST_SQLITE3 sqlite3)
-      if(HOST_SQLITE3)
-        set(EXE_SQLITE3 "${HOST_SQLITE3}")
-        message(STATUS "WASM: using host sqlite3 for proj.db generation: ${EXE_SQLITE3}")
-      else()
-        include(ExternalProject)
-        set(NATIVE_SQLITE3_PREFIX "${CMAKE_CURRENT_BINARY_DIR}/native_sqlite3")
-        ExternalProject_Add(native_sqlite3
-          SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/cmake/native_sqlite3"
-          CMAKE_ARGS
-            -DCMAKE_TOOLCHAIN_FILE=
-            -DCMAKE_BUILD_TYPE=Release
-            "-DSQLITE3_SRC_DIR=${CMAKE_CURRENT_SOURCE_DIR}/external/sqlite3/upstream"
-            "-DCMAKE_INSTALL_PREFIX=${NATIVE_SQLITE3_PREFIX}"
-          BUILD_BYPRODUCTS "${NATIVE_SQLITE3_PREFIX}/bin/sqlite3")
-        set(EXE_SQLITE3 "${NATIVE_SQLITE3_PREFIX}/bin/sqlite3")
-        set(NATIVE_SQLITE3_TARGET native_sqlite3)
-        message(STATUS "WASM: building native sqlite3 for proj.db generation")
-      endif()
+      include(ExternalProject)
+      set(NATIVE_SQLITE3_PREFIX "${CMAKE_CURRENT_BINARY_DIR}/native_sqlite3")
+      ExternalProject_Add(native_sqlite3
+        SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/cmake/native_sqlite3"
+        CMAKE_ARGS
+          -DCMAKE_TOOLCHAIN_FILE=
+          -DCMAKE_BUILD_TYPE=Release
+          "-DSQLITE3_SRC_DIR=${CMAKE_CURRENT_SOURCE_DIR}/external/sqlite3/upstream"
+          "-DCMAKE_INSTALL_PREFIX=${NATIVE_SQLITE3_PREFIX}"
+        BUILD_BYPRODUCTS "${NATIVE_SQLITE3_PREFIX}/bin/sqlite3")
+      set(EXE_SQLITE3 "${NATIVE_SQLITE3_PREFIX}/bin/sqlite3")
+      set(NATIVE_SQLITE3_TARGET native_sqlite3)
+      message(STATUS "WASM: building native sqlite3 for proj.db generation")
     endif()
+  endif()
 
   include(ProjUtilities)
   include(Ccache)
@@ -208,9 +181,7 @@ else()
     check_library_exists(dl dladdr "" HAVE_LIBDL)
     check_library_exists(m exp "" HAVE_LIBM)
   endif()
-  # Emscripten has no libdl; force HAVE_LIBDL off so the only <dlfcn.h>/dladdr
-  # use in PROJ (filemanager.cpp, runtime data-file discovery -- irrelevant here
-  # since proj.db is served from the embedded VFS) is compiled out.
+  # Emscripten has no libdl; force HAVE_LIBDL off to compile out PROJ's dladdr use.
   if(EMSCRIPTEN)
     set(HAVE_LIBDL "" CACHE INTERNAL "" FORCE)
   endif()
@@ -235,23 +206,22 @@ else()
   include(ProjMac)
   include(policies)
 
-  set(PROJ_DATA_PATH "${CMAKE_INSTALL_FULL_DATADIR}/usgscsm")
+  # Relative, so external/PROJ/data's install() honors `--prefix` and DESTDIR
+  # instead of writing to the configure-time prefix.
+  set(PROJ_DATA_PATH "${CMAKE_INSTALL_DATADIR}/usgscsm")
 
   include_directories(${PROJ_SOURCE_DIR}/src)
   add_subdirectory(external/PROJ/data)
 
-  # proj.db is generated by running EXE_SQLITE3, so that tool must be built
-  # first. Native builds use the in-tree vendored shell; WASM builds use a host
-  # sqlite3 (found on PATH, or the native ExternalProject shell).
+  # proj.db is generated by running EXE_SQLITE3, so build that tool first.
   if(NOT EMSCRIPTEN)
     add_dependencies(generate_proj_db usgscsm_sqlite3_shell)
   elseif(DEFINED NATIVE_SQLITE3_TARGET)
     add_dependencies(generate_proj_db ${NATIVE_SQLITE3_TARGET})
   endif()
 
-  # Embed the freshly generated proj.db as a C byte array so it is compiled into
-  # libusgscsm and served from memory via the custom SQLite VFS (src/ProjDbVfs.cpp).
-  # No loose proj.db or PROJ_DATA is needed at runtime.
+  # Embed proj.db as a byte array, served from memory by src/ProjDbVfs.cpp, so no
+  # loose proj.db or PROJ_DATA is needed at runtime.
   set(PROJ_DB_FILE "${CMAKE_CURRENT_BINARY_DIR}/external/PROJ/data/proj.db")
   set(PROJ_DB_DATA_C "${CMAKE_CURRENT_BINARY_DIR}/proj_db_data.cpp")
   add_custom_command(
@@ -552,8 +522,8 @@ else()
   include_directories(${CMAKE_CURRENT_BINARY_DIR})
   source_group("CMake Files" FILES CMakeLists.txt)
 
-  # Embed PROJ_DATA data files location
-  add_definitions(-DPROJ_DATA="${PROJ_DATA_PATH}")
+  # PROJ's runtime lookup needs an absolute path (unused by us: proj.db is embedded).
+  add_definitions(-DPROJ_DATA="${CMAKE_INSTALL_FULL_DATADIR}/usgscsm")
 
 
   ###########################################################
@@ -690,9 +660,7 @@ else()
   # Link properties
   ##############################################
   set(PROJ_LIBRARIES proj)
-  # Emscripten folds libm into libc and has no libdl; skip these host-lib probes
-  # so no bogus -ldl reaches wasm-ld (the dl code path is compiled out via
-  # HAVE_LIBDL being unset above).
+  # Emscripten folds libm into libc and has no libdl; skip these host-lib probes.
   if(UNIX AND NOT EMSCRIPTEN)
     find_library(M_LIB m)
     if(M_LIB)
@@ -731,9 +699,8 @@ else()
   print_variable(BUILD_SHARED_LIBS)
   print_variable(PROJ_LIBRARIES)
 
-    set(PROJ_TARGET proj)
-    set(PROJ_INCLUDE_DIR /PROJ)
-  endif()  # PROJ build (native + WASM)
+  set(PROJ_TARGET proj)
+  set(PROJ_INCLUDE_DIR /PROJ)
 
   # Nlohmann JSON
   add_library (nlohmann_json INTERFACE)
@@ -754,20 +721,10 @@ else()
 
   set(ALE_BUILD_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/ale/include/ale")
 
-  # Ensure the embedded ALE and nlohmann/json headers take precedence over any
-  # copies a conda environment may have installed under $CONDA_PREFIX/include.
-  # Conda's compiler wrapper injects -I$CONDA_PREFIX/include, which otherwise
-  # shadows the vendored headers:
-  #   * ale/Distortion.h: conda's older copy lacks newer enum values (e.g.
-  #     KPLOSHADOWCAM), breaking the tests.
-  #   * nlohmann/json.hpp: conda ships a 3.11.2 built WITHOUT the CustomBaseClass
-  #     template parameter, while external/json (also 3.11.2) has it. Both stamp
-  #     the same json_abi_v3_11_2 inline namespace, so basic_json mangles to
-  #     different symbols (extra trailing 'v'/void arg) depending on which header
-  #     a TU sees. The library (Utilities.cpp) compiles against external/json but
-  #     the test TUs were picking up conda's, producing undefined-symbol link
-  #     errors for every ISD getter. BEFORE forces the vendored copies first on
-  #     every target's include path.
+  # Force the vendored ale and nlohmann/json headers ahead of the copies conda's
+  # compiler wrapper injects with -I$CONDA_PREFIX/include: conda's ale is older,
+  # and its json.hpp mangles basic_json differently under the same inline
+  # namespace, which broke test linking.
   include_directories(BEFORE
     "${CMAKE_CURRENT_SOURCE_DIR}/external/ale/include"
     "${CMAKE_CURRENT_SOURCE_DIR}/external/json/include")
@@ -795,7 +752,6 @@ else()
   target_link_libraries(ale PRIVATE ${ALE_LINKS})
   set(ALE_TARGET ale)
 
-  # PROJ is now built for WASM too, so its headers are needed on both paths.
   set(USGSCSM_INCLUDE_DIRS "${USGSCSM_INCLUDE_DIRS}"
                            "${NLOHMANN_JSON_INCLUDE_DIR}"
                            "${CMAKE_CURRENT_SOURCE_DIR}/external/ale/include"
@@ -808,7 +764,6 @@ else()
                              ${USGSCSM_EMBED_PROJ_DB_SRCS}
                              $<TARGET_OBJECTS:ale>
   )
-  # The projected model serves proj.db from the embedded blob via the custom VFS.
   target_link_libraries(usgscsm PRIVATE usgscsm_sqlite3)
   target_compile_definitions(usgscsm PRIVATE USGSCSM_EMBED_PROJ_DB)
 endif(USGSCSM_EXTERNAL_DEPS)
@@ -831,14 +786,9 @@ target_include_directories(usgscsm
                            ${CSM_INCLUDE_DIR}
 )
 
-# STARDS support: compile the header-only STARDS reader (from the external/StarDS
-# submodule) into usgscsm. We do NOT use the submodule's own CMakeLists (it builds
-# tools/tests/SWIG bindings and resolves its compression/HTTP deps via
-# find_package to dynamic system libs). Instead we consume just its header via our
-# own INTERFACE target and supply the dependencies the way the usgscsm plugin
-# needs: vendored static libs (no runtime dylibs) natively, and the emscripten
-# zlib port for WASM. This target carries the STARDS feature defines plus the
-# dependency include dirs and link flags/libraries, propagated to consumers.
+# STARDS support: consume the header-only reader from external/StarDS through our
+# own INTERFACE target rather than the submodule's CMakeLists, which would also
+# build its tools/tests and resolve the compression deps to dynamic system libs.
 if(USGSCSM_ENABLE_STARDS)
   message(STATUS "STARDS support enabled")
 
@@ -852,15 +802,9 @@ if(USGSCSM_ENABLE_STARDS)
   add_library(usgscsm_stards INTERFACE)
   target_include_directories(usgscsm_stards INTERFACE "${STARDS_INCLUDE_DIR}")
 
-  # On Windows <windef.h> -- reached transitively via <curl/curl.h> ->
-  # <winsock2.h> -> <windows.h> -- #defines function-like min/max macros that
-  # mangle the std::min/std::max/std::numeric_limits<>::max() calls in stards.h
-  # ("error C2589: '(': illegal token on right side of '::'"). stards.h defines
-  # NOMINMAX itself, but only immediately before its own curl include, which is
-  # too late once a consumer's translation unit has already included
-  # <curl/curl.h> at global scope (src/Utilities.cpp does, deliberately, to keep
-  # third-party declarations out of `namespace star`). Set it on the target so no
-  # include order can defeat it; PROJ does the same for its own sources above.
+  # <windows.h>, reached via <curl/curl.h>, defines min/max macros that break the
+  # std::min/std::max calls in stards.h. Set on the target so no include order
+  # can defeat it.
   if(WIN32)
     target_compile_definitions(usgscsm_stards INTERFACE NOMINMAX WIN32_LEAN_AND_MEAN)
   endif()
@@ -871,25 +815,15 @@ if(USGSCSM_ENABLE_STARDS)
   target_link_libraries(usgscsm_stards INTERFACE usgscsm_lz4)
 
   if(EMSCRIPTEN)
-    # zlib from the emscripten port (-sUSE_ZLIB=1 is a compile+link flag, not an
-    # archive). curl/S3 (native static ExternalProject builds using the OS TLS
-    # backend + OpenSSL) do not apply to a browser sandbox, so STARDS is
-    # local-file only (zlib + lz4) under WASM -- all a browser consumer can read.
+    # zlib from the emscripten port (-sUSE_ZLIB=1 is a flag, not an archive).
+    # curl/S3 do not apply in a browser, so STARDS is local-file only here.
     target_compile_definitions(usgscsm_stards INTERFACE ENABLE_ZLIB)
     target_compile_options(usgscsm_stards INTERFACE "-sUSE_ZLIB=1")
     target_link_options(usgscsm_stards INTERFACE "-sUSE_ZLIB=1")
   else()
-    # Native (Windows, macOS, Linux): every STARDS dependency is built from a
-    # vendored submodule as a static lib and baked into libusgscsm, so the
-    # dlopen'd plugin carries no non-system runtime library on any platform:
-    #   * zlib      -- vendored, static (cmake/zlib).
-    #   * OpenSSL   -- vendored libcrypto (S3 SigV4 SHA256/HMAC), static, plus
-    #                  libssl only on Linux for curl's TLS (cmake/openssl).
-    #   * curl      -- vendored, static, OS-native TLS backend: SecureTransport
-    #                  (macOS), Schannel (Windows), OpenSSL (Linux) (cmake/curl).
-    # OpenSSL is configured before curl so curl can link the static OpenSSL on
-    # Linux. The only runtime dependencies that remain are OS-provided system
-    # libraries (Win32 DLLs / libSystem / glibc), never a shipped third party.
+    # Native: every STARDS dependency is a vendored static lib baked into
+    # libusgscsm, so the dlopen'd plugin needs no third-party runtime library.
+    # OpenSSL is configured before curl, which links it for TLS on Linux.
     add_subdirectory(cmake/zlib "${CMAKE_CURRENT_BINARY_DIR}/zlib")
     add_subdirectory(cmake/openssl "${CMAKE_CURRENT_BINARY_DIR}/openssl")
     add_subdirectory(cmake/curl "${CMAKE_CURRENT_BINARY_DIR}/curl")
@@ -897,12 +831,8 @@ if(USGSCSM_ENABLE_STARDS)
     target_link_libraries(usgscsm_stards INTERFACE usgscsm_zlib usgscsm_curl usgscsm_crypto)
   endif()
 
-  # Gate that un-guards the STARDS code in usgscsm's sources. Link the STARDS
-  # INTERFACE target PUBLIC so its feature defines, include dirs, and link
-  # requirements propagate to executables that link libusgscsm. This is required
-  # under Emscripten where -sUSE_ZLIB=1 is a link flag (not an archive): every
-  # final executable with STARDS/zlib object code (usgscsm_cam_test,
-  # csm_translate) must inherit it, or wasm-ld fails on undefined zlib symbols.
+  # PUBLIC so the defines, include dirs, and link flags reach executables that
+  # link libusgscsm -- required for -sUSE_ZLIB=1 under Emscripten.
   target_compile_definitions(usgscsm PRIVATE USGSCSM_ENABLE_STARDS)
   target_link_libraries(usgscsm PUBLIC usgscsm_stards)
 endif()
@@ -998,10 +928,8 @@ if(EMSCRIPTEN)
     message(STATUS "CMAKE_BUILD_TYPE not set, defaulting to Release for WASM")
   endif()
 
-  # Source files for WASM. Includes the projected sensor model: PROJ is compiled
-  # to WASM and its database (proj.db) is embedded and served from memory via the
-  # custom SQLite VFS (src/ProjDbVfs.cpp + the generated proj_db_data.cpp), so no
-  # runtime file or PROJ_DATA is required.
+  # Source files for WASM, including the projected sensor model: PROJ and its
+  # embedded proj.db are compiled to WASM too.
   set(USGSCSM_WASM_SRC_FILES
       src/UsgsAstroPlugin.cpp
       src/UsgsAstroFrameSensorModel.cpp
@@ -1029,8 +957,7 @@ if(EMSCRIPTEN)
                              ${EIGEN3_INCLUDE_DIR}
   )
 
-  # Link libraries. proj + usgscsm_sqlite3 provide the projected model; the
-  # embedded proj.db is used through the in-memory VFS (USGSCSM_EMBED_PROJ_DB).
+  # Link libraries
   target_link_libraries(usgscsm_wasm
                         PRIVATE
                         nlohmann_json::nlohmann_json
@@ -1041,9 +968,7 @@ if(EMSCRIPTEN)
   )
   target_compile_definitions(usgscsm_wasm PRIVATE USGSCSM_EMBED_PROJ_DB)
 
-  # STARDS support (local-file only for WASM: zlib via emscripten port + vendored
-  # lz4; curl/S3 are disabled for the browser). The usgscsm_stards INTERFACE
-  # target carries the ENABLE_* defines, include dirs, and zlib/lz4 link flags.
+  # STARDS support (local-file only for WASM: zlib + lz4, no curl/S3).
   if(USGSCSM_ENABLE_STARDS)
     target_compile_definitions(usgscsm_wasm PRIVATE USGSCSM_ENABLE_STARDS)
     target_link_libraries(usgscsm_wasm PRIVATE usgscsm_stards)
@@ -1071,7 +996,7 @@ if(EMSCRIPTEN)
     "-s FILESYSTEM=1"
     "-s EXPORTED_RUNTIME_METHODS=['ccall','cwrap','FS']"
     "-fexceptions"
-    # Async URL/fetch helpers (loadFromURL / loadFrom) layered on the bindings.
+    # Async URL/fetch helpers (loadFromURL / loadFrom)
     "--post-js ${CMAKE_CURRENT_SOURCE_DIR}/src/wasm/usgscsm_post.js"
   )
 

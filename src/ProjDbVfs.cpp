@@ -9,13 +9,9 @@
 #include "usgscsm/ProjDbData.h"
 
 // A minimal read-only SQLite3 VFS backed by the embedded proj.db byte array.
-//
-// PROJ opens proj.db with sqlite3_open_v2(path, SQLITE_OPEN_READONLY |
-// SQLITE_OPEN_FULLMUTEX, vfsName) -- a plain path, no SQLITE_OPEN_URI. So this
-// VFS ignores the filename entirely and always serves usgscsm_proj_db_data.
-// Only the read paths are implemented; writes/locks are no-ops or errors since
-// the database is opened read-only. Non-file operations (randomness, sleep,
-// time, full pathname) are delegated to the default OS VFS.
+// PROJ opens with a plain path and no SQLITE_OPEN_URI, so the filename is
+// ignored and usgscsm_proj_db_data is always served. Writes and locks are
+// no-ops; OS services are delegated to the default VFS.
 
 namespace {
 

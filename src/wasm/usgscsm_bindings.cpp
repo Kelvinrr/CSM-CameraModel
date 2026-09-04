@@ -145,16 +145,9 @@ public:
   }
 
   /**
-   * Load a sensor model from a raw byte buffer, auto-detecting the format.
-   *
-   * This is the entry point the JS fetch helpers use after downloading a file:
-   * the network layer lives in JavaScript (see the loadFromURL wrapper added in
-   * the module's post-js), and the downloaded bytes are handed here. The format
-   * is detected from the leading bytes, mirroring how the native usgscsm_cam_test
-   * tool sniffs an input file:
-   *   - "STARDS" magic  -> STARDS binary model state
-   *   - msgpack map byte -> binary msgpack model state
-   *   - '{'             -> JSON: an ISD if it has ISD keys, else a model state
+   * Load a sensor model from a raw byte buffer, sniffing the format from the
+   * leading bytes as usgscsm_cam_test does. Used by the JS fetch helpers in
+   * usgscsm_post.js, which do the downloading and hand the bytes here.
    *
    * @param bytes A JavaScript Uint8Array (or other typed array) of file content.
    * @return true if a model was loaded.
@@ -165,8 +158,6 @@ public:
     std::string data;
     data.resize(length);
     if (length > 0) {
-      // Copy bytes from the JS heap into our string via a memory view.
-      val heap = val::module_property("HEAPU8");
       val memView = val(typed_memory_view(length,
                                           reinterpret_cast<uint8_t*>(&data[0])));
       memView.call<void>("set", bytes);
@@ -174,8 +165,7 @@ public:
 
     try {
 #ifdef USGSCSM_ENABLE_STARDS
-      // STARDS files begin with the ASCII magic "STARDS". STARDS reads from a
-      // path, so stage the bytes in the in-memory filesystem and load from there.
+      // STARDS reads from a path, so stage the bytes in the in-memory filesystem.
       if (data.size() >= 6 && data.compare(0, 6, "STARDS") == 0) {
         const std::string tmpPath = "/tmp/usgscsm_load.stards";
         {

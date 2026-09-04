@@ -1,22 +1,5 @@
-// csm_translate: convert a CSM camera model / state between file formats.
-//
-//   csm_translate <from> <to> [options]
-//
-// Input and output formats are inferred from the file extensions and can be
-// overridden with -i/-o. The pivot is always a CSM model: the input is loaded
-// into a model, then written back out in the requested format. This tool only
-// converts file types -- for camera projection tests, use usgscsm_cam_test.
-//
-// Supported formats (extension -> format name):
-//   .json           json    CSM model state as JSON (also accepts a JSON ISD as
-//                            input; it is constructed into a model state)
-//   .isd, .msgpack  msgpack CSM model state in binary MessagePack
-//   .stards         stards  CSM model state in the STARDS binary format
-//
-// Advanced, format-specific options are set with repeated --set key=value flags.
-// STARDS output honors:
-//   --set compression=<none|gzip|zstd|lz4|gzip-shuffle|lz4-shuffle>
-//   --set block-size=<bytes>
+// csm_translate: convert a CSM camera model / state between file formats. The
+// pivot is always a CSM model. See printUsage() below for the interface.
 
 #include <UsgsAstroPlugin.h>
 #include <RasterGM.h>
@@ -106,9 +89,8 @@ bool isKnownFormat(const std::string &fmt) {
       ;
 }
 
-// Load any supported input file into a CSM model. Returns nullptr on failure.
-// `inputFormat` selects the reader; content sniffing within json/msgpack still
-// distinguishes an ISD from a model state.
+// Returns nullptr on failure. inputFormat picks the reader; an ISD is still
+// distinguished from a model state by content.
 std::shared_ptr<csm::RasterGM> loadModel(const std::string &path,
                                          const std::string &inputFormat) {
   // Force libusgscsm's plugin to register (as usgscsm_cam_test does).

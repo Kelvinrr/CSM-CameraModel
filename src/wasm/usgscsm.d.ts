@@ -119,9 +119,7 @@ export class USGSCSMModel {
    * - msgpack map byte  → binary msgpack model state
    * - `'{'`             → JSON ISD, or a JSON/`.sup` model state
    *
-   * Use this when you already have the file content in memory (e.g. from a
-   * `fetch`, a `File`/`Blob`, or `fs.readFileSync`). For a URL, prefer
-   * {@link loadFromURL} / {@link loadFrom}, which fetch and then call this.
+   * For a URL, prefer {@link loadFromURL} / {@link loadFrom}.
    *
    * @param bytes - File content as a Uint8Array
    * @returns true if a model was loaded
@@ -137,11 +135,8 @@ export class USGSCSMModel {
   /**
    * Fetch a model file from a URL and load it, auto-detecting the format.
    *
-   * The network request is performed with the browser/Node `fetch` API, so it
-   * is subject to CORS and the host's security model. The source may be a bare
-   * `http(s)://` URL or a GDAL-style `"/vsicurl/<url>"` path (the `/vsicurl/`
-   * prefix is stripped before fetching). For S3, pass a normal https URL such as
-   * a presigned URL rather than a `/vsis3/` path.
+   * Fetched with `fetch`, so CORS applies. A `/vsicurl/` prefix is stripped
+   * before fetching; for S3, pass an https (e.g. presigned) URL, not `/vsis3/`.
    *
    * @param source - An `http(s)://` URL or a `"/vsicurl/<url>"` path
    * @returns a Promise resolving to true if a model was loaded
@@ -157,9 +152,8 @@ export class USGSCSMModel {
   /**
    * Load a model from a URL/`/vsicurl/` source, a Uint8Array, or an ArrayBuffer.
    *
-   * A unified async entry point: URL-like strings are fetched (see
-   * {@link loadFromURL}); in-memory buffers are decoded directly. Always returns
-   * a Promise for a uniform API.
+   * URL-like strings are fetched (see {@link loadFromURL}); buffers are decoded
+   * directly. Always returns a Promise, whichever path is taken.
    *
    * @param source - A URL string, `"/vsicurl/<url>"` path, Uint8Array, or ArrayBuffer
    * @returns a Promise resolving to true if a model was loaded

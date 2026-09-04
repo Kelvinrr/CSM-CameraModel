@@ -14,13 +14,9 @@
 #endif
 
 #ifdef USGSCSM_ENABLE_STARDS
-// stards.h re-#includes these standard/third-party headers *inside*
-// `namespace star` (under its ENABLE_CURL / ENABLE_S3 guards). On libstdc++
-// that makes the compiler parse e.g. std::optional as star::std::optional and
-// the whole translation unit fails. Pull them in here at global scope first;
-// their include guards then turn the in-namespace re-includes into no-ops.
-// TODO: fix upstream in stards.h by hoisting these includes above the
-// `namespace star {` line, and drop this shim.
+// stards.h re-#includes these inside `namespace star`, which makes libstdc++
+// parse e.g. std::optional as star::std::optional. Including them here first
+// makes those re-includes no-ops. TODO: hoist them upstream and drop this shim.
 #include <chrono>
 #include <ctime>
 #include <fstream>
@@ -37,10 +33,8 @@
 #include <dirent.h>
 #endif
 #ifdef ENABLE_CURL
-// On Windows curl.h drags in <winsock2.h> -> <windows.h>, whose min/max macros
-// would then break every std::min/std::max in stards.h. The build also sets
-// these on the usgscsm_stards target, but keep them here so this include block
-// is correct on its own regardless of who compiles it.
+// curl.h reaches <windows.h>, whose min/max macros break std::min/std::max in
+// stards.h. Also set on the usgscsm_stards target; kept here for standalone use.
 #ifdef _WIN32
 #  ifndef WIN32_LEAN_AND_MEAN
 #    define WIN32_LEAN_AND_MEAN
@@ -2381,8 +2375,6 @@ std::vector<double> getSensorOrientations(json isd, csm::WarningList *list) {
  * parsed, 0.0 is returned.
  */
 double getExposureDuration(nlohmann::json isd, csm::WarningList *list) {
-  // Initialize so a missing "line_exposure_duration" key returns a defined value
-  // (and does not leave an uninitialized double to be returned/used).
   double duration = 0.0;
   try {
     duration = isd.at("line_exposure_duration");
@@ -2411,8 +2403,6 @@ double getExposureDuration(nlohmann::json isd, csm::WarningList *list) {
  * 0.0 is returned.
  */
 double getScaledPixelWidth(nlohmann::json isd, csm::WarningList *list) {
-  // Initialize so a missing key returns a defined value rather than an
-  // uninitialized double.
   double width = 0.0;
   try {
     width = isd.at("scaled_pixel_width");
@@ -2839,8 +2829,7 @@ VariantMap variantMapFromJson(const nlohmann::json& j) {
         // Arrays of strings carry nested model states (e.g. per-band sub-models)
         result.set<std::vector<std::string>>(key, it->get<std::vector<std::string>>());
       } else if ((*it)[0].is_object()) {
-        // Arrays of objects (e.g. per-band ISDs/states) are stored as their
-        // serialized JSON strings so they survive the flat VariantMap.
+        // Serialized so nested objects survive the flat VariantMap.
         std::vector<std::string> serialized;
         serialized.reserve(it->size());
         for (const auto& element : *it) {
@@ -3121,14 +3110,9 @@ bool isStardsFile(const std::string &path) {
 
 namespace {
 
-// star::MetadataValue::as<T>() and StarDataset::get<T>() require the EXACT
-// stored element type (they std::get_if the variant). These helpers read the
-// stored NDArray at its concrete type and widen it to the VariantMap's numeric
-// types: any integer width -> int / vector<int>, any float width -> double /
-// vector<double>.
+// as<T>()/get<T>() require the exact stored element type, so these read at the
+// concrete width StoredT and widen to the VariantMap's int/double types.
 
-// Widen an integer NDArray (read at its exact stored width StoredT) into the
-// VariantMap as int (scalar) or vector<int>.
 template <typename StoredT, typename ArrayLike>
 void setIntFrom(VariantMap &vm, const std::string &key, const ArrayLike &src,
                 bool scalar) {
@@ -3143,8 +3127,6 @@ void setIntFrom(VariantMap &vm, const std::string &key, const ArrayLike &src,
   }
 }
 
-// Widen a float NDArray (read at its exact stored width StoredT) into the
-// VariantMap as double (scalar) or vector<double>.
 template <typename StoredT, typename ArrayLike>
 void setDoubleFrom(VariantMap &vm, const std::string &key, const ArrayLike &src,
                    bool scalar) {
@@ -3159,14 +3141,9 @@ void setDoubleFrom(VariantMap &vm, const std::string &key, const ArrayLike &src,
   }
 }
 
-// Copy one STARDS value (metadata or array namespace) into the VariantMap.
-// STARDS stores every value as an NDArray, so a scalar and a 1-element array
-// are indistinguishable (size()==1). We store size()==1 values as scalars --
-// matching how CSM model-state JSON stores the vast majority of its keys -- and
-// rely on the VariantMap vector getters to unwrap a scalar back into a size-1
-// vector for the handful of genuinely-vector keys (m_intTimes,
-// m_opticalDistCoeffs, ...). `src` is anything exposing as<T>() (a
-// MetadataValue or an NDArray-returning proxy).
+// STARDS stores everything as an NDArray, so a scalar and a 1-element array are
+// indistinguishable. size()==1 is stored as a scalar; the VariantMap vector
+// getters unwrap those back into size-1 vectors for genuinely-vector keys.
 template <typename ArrayLike>
 void setFromStards(VariantMap &vm, const std::string &key,
                    star::DataType dtype, size_t nelem, const ArrayLike &src) {
@@ -3192,8 +3169,7 @@ void setFromStards(VariantMap &vm, const std::string &key,
   }
 }
 
-// Adapter so a StarDataset array-namespace key can be read through the same
-// as<T>() interface used for metadata values.
+// Lets an array-namespace key be read through the metadata as<T>() interface.
 struct ArrayNamespaceSource {
   star::StarDataset &ds;
   const std::string &key;
@@ -3202,10 +3178,7 @@ struct ArrayNamespaceSource {
 
 }  // namespace
 
-// Read a STARDS state file into the flat VariantMap intermediary. STARDS keys
-// map 1-to-1 onto CSM state keys, so no ISD translation is needed. Values live
-// in two STARDS namespaces: small values/scalars in the metadata namespace and
-// large arrays in the array namespace; both are pulled into the same flat map.
+// STARDS keys map 1-to-1 onto CSM state keys, so no ISD translation is needed.
 VariantMap variantMapFromStards(const std::string &path) {
   VariantMap vm;
 
@@ -3226,8 +3199,7 @@ VariantMap variantMapFromStards(const std::string &path) {
     }
   }
 
-  // Array namespace: large arrays stored separately (STARDS handles
-  // decompression). These are always multi-element, so pass a size > 1.
+  // Array namespace: always multi-element, so pass a size > 1.
   for (const std::string &key : ds->get_all_keys()) {
     ArrayNamespaceSource src{*ds, key};
     setFromStards(vm, key, ds->dtype_of(key), /*nelem=*/2, src);
@@ -3236,9 +3208,6 @@ VariantMap variantMapFromStards(const std::string &path) {
   return vm;
 }
 
-// Build a camera model from a STARDS state file. The model name is carried in
-// the state itself under the m_modelName key (1-to-1 with CSM state), so this
-// reuses the existing VariantMap dispatcher with no other conversion.
 csm::RasterGM *getUsgsCsmModelFromStards(const std::string &path,
                                          csm::WarningList *warnings) {
   VariantMap vm = variantMapFromStards(path);
@@ -3253,9 +3222,8 @@ csm::RasterGM *getUsgsCsmModelFromStards(const std::string &path,
 
 namespace {
 
-// Route one NDArray into the store by size, matching star_translate's paradigm:
-// values with more than `arrayThreshold` elements go to (sliceable) array
-// storage; scalars and short arrays go to the metadata block.
+// Matching star_translate: over arrayThreshold elements goes to sliceable array
+// storage, everything shorter to the metadata block.
 template <typename T>
 void storeBySize(star::StarDataset &ds, const std::string &key,
                  star::NDArray<T> arr, size_t arrayThreshold) {
@@ -3270,8 +3238,6 @@ void storeBySize(star::StarDataset &ds, const std::string &key,
 
 namespace {
 
-// Map a star_translate-style compression name to the STARDS enum. Throws
-// csm::Error on an unrecognized name.
 star::CompressionAlgorithm parseStardsCompression(const std::string &name) {
   if (name == "none")         return star::CompressionAlgorithm::NONE;
   if (name == "gzip")         return star::CompressionAlgorithm::GZIP;
@@ -3348,13 +3314,14 @@ void variantMapToStards(const VariantMap &vm, const std::string &path,
         break;
       }
       default:
-        break;  // Unknown type: skip.
+        throw csm::Error(csm::Error::INVALID_USE,
+                         "Cannot write key '" + key +
+                             "' to STARDS: unknown value type",
+                         "variantMapToStards");
     }
   }
 }
 
-// Serialize a model to a STARDS state file, reusing getUsgsCsmModelMap to get
-// the state VariantMap (same paradigm as getUsgsCsmModelJson for JSON output).
 void writeUsgsCsmModelToStards(csm::RasterGM *model, const std::string &path,
                                const std::string &compression, size_t blockSize,
                                size_t arrayThreshold) {

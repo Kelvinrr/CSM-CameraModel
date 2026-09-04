@@ -124,11 +124,8 @@ void UsgsAstroProjectedSensorModel::populateModel(const VariantMap& state) {
   PJ_CONTEXT *C = proj_context_create();
 
 #ifdef USGSCSM_EMBED_PROJ_DB
-  // Serve the PROJ database from the copy embedded in the plugin, so no loose
-  // proj.db file or PROJ_DATA environment variable is required at runtime. The
-  // custom in-memory VFS ignores the path; "proj.db" is a nominal filename.
-  // (Only for the embedded-PROJ build; the external-deps build uses the system
-  // PROJ's own data resolution.)
+  // Serve proj.db from the copy embedded in the plugin, so no loose file or
+  // PROJ_DATA is needed at runtime. The VFS ignores the path; it is nominal.
   const std::string &vfsName = usgscsm::ensureProjDbVfsRegistered();
   proj_context_set_sqlite3_vfs_name(C, vfsName.c_str());
   proj_context_set_database_path(C, "proj.db", nullptr, nullptr);
@@ -153,12 +150,9 @@ void UsgsAstroProjectedSensorModel::populateModel(const VariantMap& state) {
     return;
   }
 
-  // The ISD CRS and the ECEF geocent CRS describe the same planetary body, but
-  // PROJ cannot always match their celestial-body names (common for non-Earth
-  // bodies), which makes proj_create_crs_to_crs_from_pj fail with "no match
-  // found". Planetary imagery is the norm here, so opt into PROJ's override
-  // unless the caller has explicitly set the variable (their value then wins,
-  // including turning the check back on with NO/FALSE/OFF).
+  // PROJ often cannot match the celestial-body names of two non-Earth CRSes,
+  // failing proj_create_crs_to_crs_from_pj with "no match found". Planetary
+  // imagery is the norm here, so default the override on; a caller-set value wins.
   if (getenv("PROJ_IGNORE_CELESTIAL_BODY") == nullptr) {
 #ifdef _WIN32
     _putenv_s("PROJ_IGNORE_CELESTIAL_BODY", "YES");

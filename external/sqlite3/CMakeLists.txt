@@ -1,11 +1,6 @@
-# Static build of SQLite3, vendored (as a submodule under upstream/) so it is
-# compiled directly into libusgscsm. A CSM plugin is dlopen'd at runtime and
-# cannot depend on a libsqlite3 dylib; PROJ is the only consumer of sqlite3.
-#
-# Defines two targets:
-#   usgscsm_sqlite3        - static library linked into libusgscsm (and PROJ)
-#   usgscsm_sqlite3_shell  - the sqlite3 CLI, used at build time as EXE_SQLITE3
-#                            to generate proj.db from PROJ's SQL sources.
+# Static SQLite3, vendored under upstream/ so it is baked into libusgscsm. Two
+# targets: usgscsm_sqlite3 (linked into libusgscsm and PROJ) and
+# usgscsm_sqlite3_shell (the CLI, used at build time as EXE_SQLITE3).
 
 cmake_minimum_required(VERSION 3.10)
 
@@ -17,9 +12,7 @@ if(NOT EXISTS "${SQLITE3_SRC_DIR}/sqlite3.c")
     "Run: git submodule update --init --recursive")
 endif()
 
-# Compile-time options. PROJ requires sqlite >= 3.11 and uses column metadata
-# APIs; enable threadsafe serialized mode since PROJ opens the DB with
-# SQLITE_OPEN_FULLMUTEX from concurrent threads.
+# PROJ uses the column metadata APIs and opens the DB with SQLITE_OPEN_FULLMUTEX.
 set(USGSCSM_SQLITE3_DEFS
     SQLITE_ENABLE_COLUMN_METADATA
     SQLITE_THREADSAFE=1
@@ -35,10 +28,8 @@ target_compile_definitions(usgscsm_sqlite3 PRIVATE ${USGSCSM_SQLITE3_DEFS})
 target_include_directories(usgscsm_sqlite3 PUBLIC
     $<BUILD_INTERFACE:${SQLITE3_SRC_DIR}>)
 
-# The sqlite3 command-line shell, used only as a build-time host tool
-# (EXE_SQLITE3) to generate proj.db. Skip under Emscripten: a cross-compiled
-# shell cannot run on the host; the WASM build supplies a native shell
-# separately (see the WASM follow-up in the plan).
+# Skipped under Emscripten: a cross-compiled shell cannot run on the host, so the
+# WASM build supplies a native one separately.
 if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   add_executable(usgscsm_sqlite3_shell
       "${SQLITE3_SRC_DIR}/shell.c"

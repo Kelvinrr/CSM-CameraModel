@@ -483,8 +483,7 @@ csm::Model *UsgsAstroPlugin::constructModelFromISD(
   LOG_INFO( "Running constructModelFromISD");
 
 #ifdef USGSCSM_ENABLE_STARDS
-  // A STARDS input file holds a CSM model *state* (keys 1-to-1 with CSM state),
-  // not an ISD. Build directly from it, skipping the JSON ISD pipeline.
+  // A STARDS file holds a model state, not an ISD: skip the ISD pipeline.
   if (isStardsFile(imageSupportDataOriginal.filename())) {
     LOG_DEBUG( "Constructing model from STARDS state file");
     return getUsgsCsmModelFromStards(imageSupportDataOriginal.filename(), warnings);

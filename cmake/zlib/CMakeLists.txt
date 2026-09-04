@@ -1,13 +1,5 @@
-# Static build of zlib. zlib is vendored as an unmodified submodule at
-# external/zlib (pinned to v1.3.1); this build glue lives in the main repo so the
-# submodule stays pristine. Only the core library sources are compiled,
-# statically, directly into libusgscsm -- a CSM plugin is dlopen'd at runtime and
-# cannot depend on runtime dylibs, and on Windows this keeps the plugin free of a
-# zlib1.dll dependency.
-#
-# STARDS uses zlib to (de)compress state files. Building from source (rather than
-# find_package on a system/conda zlib) guarantees a single, self-contained static
-# archive with position-independent code on every platform.
+# Static zlib, built from the pristine submodule at external/zlib so it is baked
+# into libusgscsm. STARDS uses it to (de)compress state files.
 
 cmake_minimum_required(VERSION 3.10)
 
@@ -19,21 +11,14 @@ if(NOT EXISTS "${ZLIB_SRC_DIR}/zlib.h")
     "Run: git submodule update --init --recursive")
 endif()
 
-# zlib ships a usable checked-in zconf.h, so no configure step is needed -- with
-# one exception. Upstream's own CMake build generates zconf.h from
-# zconf.h.cmakein and stamps Z_HAVE_UNISTD_H into it (#cmakedefine); the
-# checked-in copy leaves it undefined, so <unistd.h> is never pulled in. That
-# makes gzlib.c's LSEEK -> lseek an implicit declaration, which clang 16+
-# (Xcode 16 on the macOS runners) rejects outright rather than warning about:
-#   gzlib.c:242:9: error: call to undeclared function 'lseek'
-# Probe for the header and define the macro ourselves. PUBLIC so consumers parse
-# zconf.h exactly as the library was compiled -- it also decides whether z_off_t
-# is off_t, which is part of the gzseek/gztell signatures.
+# The checked-in zconf.h leaves Z_HAVE_UNISTD_H undefined (zlib's own CMake build
+# stamps it in), so gzlib.c's lseek is implicitly declared and clang 16+ errors.
+# Probe and define it ourselves; PUBLIC because it also decides whether z_off_t is
+# off_t, which is part of the gzseek/gztell signatures.
 include(CheckIncludeFile)
 check_include_file(unistd.h USGSCSM_ZLIB_HAVE_UNISTD_H)
 
-# These are the core compression/decompression sources (the gz* file helpers are
-# included so STARDS can read gzip-wrapped streams).
+# Core sources, plus the gz* helpers so STARDS can read gzip-wrapped streams.
 add_library(usgscsm_zlib STATIC
     "${ZLIB_SRC_DIR}/adler32.c"
     "${ZLIB_SRC_DIR}/compress.c"
@@ -52,8 +37,7 @@ add_library(usgscsm_zlib STATIC
     "${ZLIB_SRC_DIR}/zutil.c"
 )
 
-# Position-independent code so the static lib links into the usgscsm shared
-# library (mandatory on ELF; the earlier CI failure was a non-PIC system libz.a).
+# PIC so the static lib links into the usgscsm shared library (required on ELF).
 set_target_properties(usgscsm_zlib PROPERTIES
     POSITION_INDEPENDENT_CODE ON
     C_VISIBILITY_PRESET hidden)
@@ -62,8 +46,7 @@ if(USGSCSM_ZLIB_HAVE_UNISTD_H)
   target_compile_definitions(usgscsm_zlib PUBLIC Z_HAVE_UNISTD_H)
 endif()
 
-# On Windows, silence zlib's CRT deprecation warnings (fopen/sprintf) so a
-# warnings-as-errors consumer build doesn't trip on vendored code.
+# Silence zlib's CRT deprecation warnings (fopen/sprintf) on vendored code.
 if(MSVC)
   target_compile_definitions(usgscsm_zlib PRIVATE _CRT_SECURE_NO_WARNINGS _CRT_NONSTDC_NO_DEPRECATE)
 endif()
