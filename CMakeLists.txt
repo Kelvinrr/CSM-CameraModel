@@ -773,6 +773,43 @@ set_target_properties(usgscsm PROPERTIES
     SOVERSION 1
     WINDOWS_EXPORT_ALL_SYMBOLS ON
 )
+
+# csm::Plugin::theList is a static member, and discovery works by the plugin ctor
+# pushing itself into the *host's* copy. Linking csmapi into a dlopen'd plugin gives
+# it a private registry, so the host finds nothing. Leave the csm symbols undefined
+# and let the loader bind them to the host's copy -- which also keeps libcsmapi out
+# of the plugin's link list entirely. Windows DLLs cannot carry unresolved imports
+# and WASM has no host, so both link csmapi directly.
+if(EMSCRIPTEN OR WIN32)
+  set(USGSCSM_PLUGIN_LINKS_CSM ON)
+else()
+  set(USGSCSM_PLUGIN_LINKS_CSM OFF)
+endif()
+
+# Force-loads all of csmapi into an executable and exports it, so the plugin's
+# undefined csm symbols bind there and the process has exactly one registry. A no-op
+# where the plugin links csmapi itself: linking it here too would define every csm
+# symbol twice, once from the archive and once from libusgscsm (LNK2005 on MSVC).
+function(usgscsm_link_csm target)
+  if(USGSCSM_PLUGIN_LINKS_CSM)
+    return()
+  endif()
+  target_link_libraries(${target} ${CSM_LIBRARY})
+  if(NOT TARGET csmapi)
+    return()
+  endif()
+  set_target_properties(${target} PROPERTIES ENABLE_EXPORTS ON)
+  if(APPLE)
+    target_link_options(${target} PRIVATE
+                        "LINKER:-force_load,$<TARGET_FILE:csmapi>"
+                        "LINKER:-export_dynamic")
+  else()
+    target_link_options(${target} PRIVATE
+                        "LINKER:--whole-archive" "$<TARGET_FILE:csmapi>"
+                        "LINKER:--no-whole-archive")
+  endif()
+endfunction()
+
 set(USGSCSM_INCLUDE_DIRS "${USGSCSM_INCLUDE_DIRS}"
                          "${EIGEN3_INCLUDE_DIR}"
                          "${PROJ_INCLUDE_DIR}")
@@ -841,14 +878,24 @@ endif()
 target_link_libraries(usgscsm
                       PUBLIC
                       nlohmann_json::nlohmann_json
-                      ${CSM_LIBRARY}
                       ${ALE_TARGET}
                       PRIVATE
                       ${PROJ_TARGET})
 
+# Matches how the host's csmapi was compiled; normally arrives via the csmapi target.
+target_compile_definitions(usgscsm PUBLIC $<$<PLATFORM_ID:Linux>:LINUX_BUILD>)
+if(USGSCSM_PLUGIN_LINKS_CSM)
+  # PRIVATE, so a DLL absorbs csmapi and consumers resolve csm through usgscsm.lib
+  # alone. A static libusgscsm still propagates it for linking via $<LINK_ONLY>.
+  target_link_libraries(usgscsm PRIVATE ${CSM_LIBRARY})
+elseif(APPLE)
+  target_link_options(usgscsm PRIVATE "LINKER:-undefined,dynamic_lookup")
+endif()
+
 add_executable(usgscsm_cam_test bin/usgscsm_cam_test.cc)
 target_link_libraries(usgscsm_cam_test
     usgscsm)
+usgscsm_link_csm(usgscsm_cam_test)
 
 if(USGSCSM_ENABLE_STARDS)
   target_compile_definitions(usgscsm_cam_test PRIVATE USGSCSM_ENABLE_STARDS)
@@ -869,9 +916,8 @@ endif()
 
 # csm_translate: file-format conversion tool (json <-> msgpack <-> stards).
 add_executable(csm_translate bin/csm_translate.cc)
-target_link_libraries(csm_translate
-    usgscsm
-    ${CSM_LIBRARY})
+target_link_libraries(csm_translate usgscsm)
+usgscsm_link_csm(csm_translate)
 # Only the gate define is needed; STARDS helpers live in libusgscsm.
 if(USGSCSM_ENABLE_STARDS)
   target_compile_definitions(csm_translate PRIVATE USGSCSM_ENABLE_STARDS)

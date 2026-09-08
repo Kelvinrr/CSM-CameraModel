@@ -1,5 +1,6 @@
-# Static CSM API from the pristine submodule at external/csm. The submodule's own
-# CMakeLists hardcodes SHARED, which would ship a libcsmapi alongside the plugin.
+# Static CSM API from the pristine submodule at external/csm, whose own CMakeLists
+# hardcodes SHARED. Consumed by the executables and the WASM module, NOT by the
+# dlopen'd plugin -- see the csm::Plugin::theList note in the root CMakeLists.
 
 cmake_minimum_required(VERSION 3.10)
 
