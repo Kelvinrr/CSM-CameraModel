@@ -46,8 +46,6 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
       STRING "Choose the type of build." FORCE)
 endif()
 
-set(VISIBILITY_INLINES_HIDDEN 1)
-
 # Use external or embedded dependencies
 option(USGSCSM_EXTERNAL_DEPS "If the library should be built with external or embedded dependencies" OFF)
 option(USGSCSM_ENABLE_STARDS "Build support for instantiating models from STARDS state files" ON)
@@ -108,13 +106,11 @@ else()
   message(STATUS "Using embedded dependencies")
   # CSM API library, built static (see cmake/csm).
   add_subdirectory(cmake/csm "${CMAKE_CURRENT_BINARY_DIR}/csm")
-  # Header dir, for sources that include the CSM headers bare (<RasterGM.h>).
-  set(CSM_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/csm")
+  # Same meaning as the find_path above: the dir that makes <csm/csm.h> resolve.
+  set(CSM_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external")
   set(CSM_LIBRARY csmapi)
 
   # PROJ, for the projected sensor model, built for native and WASM alike.
-  # First configure proj library
-  set(BUILD_SHARED_LIBS OFF)
   set(PROJ_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/PROJ")
   set(CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/external/PROJ/cmake ${CMAKE_MODULE_PATH})
   set(CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/external/PROJ/src ${CMAKE_MODULE_PATH})
@@ -177,13 +173,11 @@ else()
   # check needed include file
   check_function_exists(localeconv HAVE_LOCALECONV)
   check_function_exists(strerror HAVE_STRERROR)
+  # Emscripten has neither libdl nor libm as separate libraries; leaving
+  # HAVE_LIBDL unset is what compiles out PROJ's dladdr use.
   if(NOT WIN32 AND NOT EMSCRIPTEN)
     check_library_exists(dl dladdr "" HAVE_LIBDL)
     check_library_exists(m exp "" HAVE_LIBM)
-  endif()
-  # Emscripten has no libdl; force HAVE_LIBDL off to compile out PROJ's dladdr use.
-  if(EMSCRIPTEN)
-    set(HAVE_LIBDL "" CACHE INTERNAL "" FORCE)
   endif()
 
   # restore CMAKE_C_FLAGS as before
@@ -191,23 +185,19 @@ else()
     set(CMAKE_C_FLAGS "${_prev_CMAKE_C_FLAGS}")
   endif()
 
-  # check if a second proj_config.h exists (created by ./configure)
-  # as this is within CMake's C_INCLUDES / CXX_INCLUDES
-  set(AUTOCONF_PROJ_CONFIG_H "${PROJ_SOURCE_DIR}/src/proj_config.h")
-  if(EXISTS ${AUTOCONF_PROJ_CONFIG_H})
-    message(WARNING
-      "Autoconf's ${AUTOCONF_PROJ_CONFIG_H} may interfere with this "
-      "CMake build. Run 'make distclean' in the source directory "
-      "before CMake's build.")
-  endif()
-
-  message("${CMAKE_CURRENT_SOURCE_DIR}")
+  # PROJ's build warns here if a stale autoconf-generated proj_config.h is found
+  # in its source tree. That check is dropped: the configure_file below writes
+  # that very file, so it would fire on every configure after the first.
   configure_file(${PROJ_SOURCE_DIR}/cmake/proj_config.cmake.in ${PROJ_SOURCE_DIR}/src/proj_config.h)
   include(ProjMac)
   include(policies)
 
-  # Relative, so external/PROJ/data's install() honors `--prefix` and DESTDIR
-  # instead of writing to the configure-time prefix.
+  # Where external/PROJ/data's install() puts PROJ's dictionaries, grids and a
+  # copy of proj.db. Relative, so it honors `--prefix` and DESTDIR instead of
+  # writing to the configure-time prefix. At runtime the plugin serves proj.db
+  # from the embedded copy below and never reads this directory; it exists as
+  # PROJ's own fallback (see -DPROJ_DATA further down) for the case where the
+  # in-memory VFS cannot be registered.
   set(PROJ_DATA_PATH "${CMAKE_INSTALL_DATADIR}/usgscsm")
 
   include_directories(${PROJ_SOURCE_DIR}/src)
@@ -522,7 +512,8 @@ else()
   include_directories(${CMAKE_CURRENT_BINARY_DIR})
   source_group("CMake Files" FILES CMakeLists.txt)
 
-  # PROJ's runtime lookup needs an absolute path (unused by us: proj.db is embedded).
+  # Compiled-in fallback search path, matching PROJ_DATA_PATH above. Absolute,
+  # as PROJ's runtime lookup requires. Not the normal path: proj.db is embedded.
   add_definitions(-DPROJ_DATA="${CMAKE_INSTALL_FULL_DATADIR}/usgscsm")
 
 
@@ -700,7 +691,9 @@ else()
   print_variable(PROJ_LIBRARIES)
 
   set(PROJ_TARGET proj)
-  set(PROJ_INCLUDE_DIR /PROJ)
+  # Where proj.h lives in the submodule, so <proj.h> resolves for anything that
+  # links usgscsm rather than only inside this directory's include_directories().
+  set(PROJ_INCLUDE_DIR "${PROJ_SOURCE_DIR}/src")
 
   # Nlohmann JSON
   add_library (nlohmann_json INTERFACE)
@@ -839,6 +832,11 @@ if(USGSCSM_ENABLE_STARDS)
   add_library(usgscsm_stards INTERFACE)
   target_include_directories(usgscsm_stards INTERFACE "${STARDS_INCLUDE_DIR}")
 
+  # The gate define rides on the target, so every consumer -- libusgscsm, the
+  # executables that link it, the test binary, and the WASM module -- picks it up
+  # from the one place that also supplies the headers and the compression deps.
+  target_compile_definitions(usgscsm_stards INTERFACE USGSCSM_ENABLE_STARDS)
+
   # <windows.h>, reached via <curl/curl.h>, defines min/max macros that break the
   # std::min/std::max calls in stards.h. Set on the target so no include order
   # can defeat it.
@@ -865,12 +863,13 @@ if(USGSCSM_ENABLE_STARDS)
     add_subdirectory(cmake/openssl "${CMAKE_CURRENT_BINARY_DIR}/openssl")
     add_subdirectory(cmake/curl "${CMAKE_CURRENT_BINARY_DIR}/curl")
     target_compile_definitions(usgscsm_stards INTERFACE ENABLE_ZLIB ENABLE_CURL ENABLE_S3)
+    # usgscsm_crypto is STARDS's own dependency (HMAC-SHA256 for S3 SigV4), not a
+    # restatement of curl's: curl links OpenSSL for TLS on Linux only.
     target_link_libraries(usgscsm_stards INTERFACE usgscsm_zlib usgscsm_curl usgscsm_crypto)
   endif()
 
   # PUBLIC so the defines, include dirs, and link flags reach executables that
   # link libusgscsm -- required for -sUSE_ZLIB=1 under Emscripten.
-  target_compile_definitions(usgscsm PRIVATE USGSCSM_ENABLE_STARDS)
   target_link_libraries(usgscsm PUBLIC usgscsm_stards)
 endif()
 
@@ -892,44 +891,33 @@ elseif(APPLE)
   target_link_options(usgscsm PRIVATE "LINKER:-undefined,dynamic_lookup")
 endif()
 
-add_executable(usgscsm_cam_test bin/usgscsm_cam_test.cc)
-target_link_libraries(usgscsm_cam_test
-    usgscsm)
-usgscsm_link_csm(usgscsm_cam_test)
-
-if(USGSCSM_ENABLE_STARDS)
-  target_compile_definitions(usgscsm_cam_test PRIVATE USGSCSM_ENABLE_STARDS)
-endif()
-
-install(TARGETS usgscsm LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}/csmplugins/)
-install(DIRECTORY ${USGSCSM_INSTALL_INCLUDE_DIRS} DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
-install(TARGETS usgscsm_cam_test RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
-
-# Ensure usgscsm_cam_test can find the library in csmplugins
+# Points an installed executable at libusgscsm in csmplugins/, which is not a
+# directory the loader searches by default.
 if(APPLE)
-  set_target_properties(usgscsm_cam_test PROPERTIES
-    INSTALL_RPATH "@loader_path/../${CMAKE_INSTALL_LIBDIR}/csmplugins")
+  set(USGSCSM_TOOL_RPATH "@loader_path/../${CMAKE_INSTALL_LIBDIR}/csmplugins")
 else()
-  set_target_properties(usgscsm_cam_test PROPERTIES
-    INSTALL_RPATH "$ORIGIN/../${CMAKE_INSTALL_LIBDIR}/csmplugins")
+  set(USGSCSM_TOOL_RPATH "$ORIGIN/../${CMAKE_INSTALL_LIBDIR}/csmplugins")
 endif()
+
+function(usgscsm_add_tool target source)
+  add_executable(${target} ${source})
+  target_link_libraries(${target} usgscsm)
+  usgscsm_link_csm(${target})
+  set_target_properties(${target} PROPERTIES INSTALL_RPATH "${USGSCSM_TOOL_RPATH}")
+  install(TARGETS ${target} RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+endfunction()
+
+usgscsm_add_tool(usgscsm_cam_test bin/usgscsm_cam_test.cc)
 
 # csm_translate: file-format conversion tool (json <-> msgpack <-> stards).
-add_executable(csm_translate bin/csm_translate.cc)
-target_link_libraries(csm_translate usgscsm)
-usgscsm_link_csm(csm_translate)
-# Only the gate define is needed; STARDS helpers live in libusgscsm.
-if(USGSCSM_ENABLE_STARDS)
-  target_compile_definitions(csm_translate PRIVATE USGSCSM_ENABLE_STARDS)
-endif()
-install(TARGETS csm_translate RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
-if(APPLE)
-  set_target_properties(csm_translate PROPERTIES
-    INSTALL_RPATH "@loader_path/../${CMAKE_INSTALL_LIBDIR}/csmplugins")
-else()
-  set_target_properties(csm_translate PROPERTIES
-    INSTALL_RPATH "$ORIGIN/../${CMAKE_INSTALL_LIBDIR}/csmplugins")
-endif()
+usgscsm_add_tool(csm_translate bin/csm_translate.cc)
+
+# RUNTIME covers usgscsm.dll on Windows, where LIBRARY is only the import library.
+install(TARGETS usgscsm
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}/csmplugins/
+        RUNTIME DESTINATION ${CMAKE_INSTALL_LIBDIR}/csmplugins/
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}/csmplugins/)
+install(DIRECTORY ${USGSCSM_INSTALL_INCLUDE_DIRS} DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 
 # Optional build tests
 option (USGSCSM_BUILD_TESTS "Build tests" ON)
@@ -1016,7 +1004,6 @@ if(EMSCRIPTEN)
 
   # STARDS support (local-file only for WASM: zlib + lz4, no curl/S3).
   if(USGSCSM_ENABLE_STARDS)
-    target_compile_definitions(usgscsm_wasm PRIVATE USGSCSM_ENABLE_STARDS)
     target_link_libraries(usgscsm_wasm PRIVATE usgscsm_stards)
   endif()
 

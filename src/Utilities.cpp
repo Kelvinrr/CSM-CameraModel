@@ -2560,32 +2560,53 @@ json stateAsJson(std::string modelState) {
 }
 
 /**
- * @brief Check if a file is in msgpack binary format by peeking at the first byte.
- * @description Per the msgpack spec (github.com/msgpack/msgpack/blob/master/spec.md),
- * a map object starts with 0x80-0x8F (fixmap), 0xDE (map16), or 0xDF (map32).
- * JSON starts with '{' (0x7B), so there is no ambiguity.
+ * @brief Identify a serialization format from the leading bytes of a file's content.
+ * @description A STARDS file opens with the ASCII magic "STARDS". A msgpack model
+ * state is a map, which per the msgpack spec
+ * (github.com/msgpack/msgpack/blob/master/spec.md) opens with 0x80-0x8F (fixmap),
+ * 0xDE (map16), or 0xDF (map32). JSON opens with '{' (0x7B) and a .sup with a text
+ * preamble, so neither collides with the binary cases.
  *
- * @param filename The path to the file to check.
- * @return True if the file starts with a msgpack map byte, false otherwise.
+ * @param bytes The file content, or at least its first 6 bytes.
+ * @return The detected format; Unknown only for empty input.
  */
-bool isMsgpack(std::string const& filename) {
+ModelFormat modelFormatFromBytes(const std::string& bytes) {
+  if (bytes.empty()) {
+    return ModelFormat::Unknown;
+  }
+  if (bytes.size() >= 6 && bytes.compare(0, 6, "STARDS") == 0) {
+    return ModelFormat::Stards;
+  }
+  const uint8_t b0 = static_cast<uint8_t>(bytes[0]);
+  if ((b0 >= 0x80 && b0 <= 0x8F) || b0 == 0xDE || b0 == 0xDF) {
+    return ModelFormat::Msgpack;
+  }
+  return ModelFormat::Text;
+}
+
+/**
+ * @brief Identify a file's serialization format by peeking at its leading bytes.
+ * @param filename The path to the file to check.
+ * @return The detected format, or Unknown if the file cannot be read.
+ */
+ModelFormat modelFormatOfFile(std::string const& filename) {
 #ifdef __EMSCRIPTEN__
   // In WebAssembly, check if file exists in virtual filesystem first
   bool exists = EM_ASM_INT({
     return FS.analyzePath(UTF8ToString($0)).exists;
   }, filename.c_str());
   if (!exists) {
-    return false;
+    return ModelFormat::Unknown;
   }
 #endif
 
   std::ifstream ifs(filename, std::ios::binary);
   if (!ifs.is_open()) {
-    return false;
+    return ModelFormat::Unknown;
   }
-  uint8_t b = 0;
-  ifs.read(reinterpret_cast<char*>(&b), 1);
-  return (b >= 0x80 && b <= 0x8F) || b == 0xDE || b == 0xDF;
+  char magic[6] = {0};
+  ifs.read(magic, sizeof(magic));
+  return modelFormatFromBytes(std::string(magic, ifs.gcount()));
 }
 
 /**
@@ -2826,21 +2847,50 @@ VariantMap variantMapFromJson(const nlohmann::json& j) {
       } else if ((*it)[0].is_number()) {
         result.set<std::vector<double>>(key, it->get<std::vector<double>>());
       } else if ((*it)[0].is_string()) {
-        // Arrays of strings carry nested model states (e.g. per-band sub-models)
         result.set<std::vector<std::string>>(key, it->get<std::vector<std::string>>());
-      } else if ((*it)[0].is_object()) {
-        // Serialized so nested objects survive the flat VariantMap.
-        std::vector<std::string> serialized;
-        serialized.reserve(it->size());
-        for (const auto& element : *it) {
-          serialized.push_back(element.dump());
-        }
-        result.set<std::vector<std::string>>(key, serialized);
       }
+      // Arrays of objects or of arrays are dropped: a VariantMap cannot hold
+      // them, and stuffing in their serialized text would come back out of
+      // jsonFromVariantMap() as strings rather than the structure it was.
     }
   }
 
   return result;
+}
+
+static csm::param::Type parameterTypeFromName(const std::string& name) {
+  if (name == "NONE") return csm::param::NONE;
+  if (name == "FICTITIOUS") return csm::param::FICTITIOUS;
+  if (name == "FIXED") return csm::param::FIXED;
+  // Anything unrecognized falls back to REAL, which is what every model
+  // defaults to anyway, so an odd name degrades instead of throwing.
+  return csm::param::REAL;
+}
+
+std::vector<csm::param::Type> parameterTypesFromState(const VariantMap& state,
+                                                      const std::string& key) {
+  std::vector<csm::param::Type> types;
+  if (!state.contains(key)) {
+    return types;
+  }
+
+  switch (state.getValueType(key)) {
+    case VariantMap::ValueType::VectorString:
+      for (const std::string& name : state.get<std::vector<std::string>>(key)) {
+        types.push_back(parameterTypeFromName(name));
+      }
+      break;
+    case VariantMap::ValueType::String:
+      types.push_back(parameterTypeFromName(state.get<std::string>(key)));
+      break;
+    default:
+      for (int value : state.get<std::vector<int>>(key)) {
+        types.push_back(static_cast<csm::param::Type>(value));
+      }
+      break;
+  }
+
+  return types;
 }
 
 nlohmann::json jsonFromVariantMap(const VariantMap& vm) {
@@ -3101,70 +3151,51 @@ bool isUsgsCsmState(const std::string &str, std::string &modelName) {
 
 #ifdef USGSCSM_ENABLE_STARDS
 
-// True when path names a STARDS file, judged solely by the ".stards" extension.
-bool isStardsFile(const std::string &path) {
-  const std::string ext = ".stards";
-  if (path.size() < ext.size()) return false;
-  return std::equal(ext.rbegin(), ext.rend(), path.rbegin());
-}
+const char *const STARDS_DEFAULT_COMPRESSION = "lz4-shuffle";
 
 namespace {
 
-// as<T>()/get<T>() require the exact stored element type, so these read at the
-// concrete width StoredT and widen to the VariantMap's int/double types.
-
-template <typename StoredT, typename ArrayLike>
-void setIntFrom(VariantMap &vm, const std::string &key, const ArrayLike &src,
-                bool scalar) {
-  const star::NDArray<StoredT> arr = src.template as<StoredT>();
-  if (scalar) {
-    vm.set<int>(key, static_cast<int>(arr.flat(0)));
-  } else {
-    std::vector<int> ints;
-    ints.reserve(arr.data().size());
-    for (StoredT v : arr.data()) ints.push_back(static_cast<int>(v));
-    vm.set<std::vector<int>>(key, ints);
-  }
-}
-
-template <typename StoredT, typename ArrayLike>
-void setDoubleFrom(VariantMap &vm, const std::string &key, const ArrayLike &src,
-                   bool scalar) {
-  const star::NDArray<StoredT> arr = src.template as<StoredT>();
-  if (scalar) {
-    vm.set<double>(key, static_cast<double>(arr.flat(0)));
-  } else {
-    std::vector<double> vals;
-    vals.reserve(arr.data().size());
-    for (StoredT v : arr.data()) vals.push_back(static_cast<double>(v));
-    vm.set<std::vector<double>>(key, vals);
-  }
-}
-
 // STARDS stores everything as an NDArray, so a scalar and a 1-element array are
-// indistinguishable. size()==1 is stored as a scalar; the VariantMap vector
-// getters unwrap those back into size-1 vectors for genuinely-vector keys.
+// indistinguishable coming back out. Metadata entries report their true element
+// count; array-namespace entries are multi-element by construction.
+enum class StardsArity { Scalar, Vector };
+
+// as<T>()/get<T>() require the exact stored element type, so read at the concrete
+// width StoredT and widen to Target -- the VariantMap's int or double.
+template <typename Target, typename StoredT, typename ArrayLike>
+void setNumericFrom(VariantMap &vm, const std::string &key, const ArrayLike &src,
+                    StardsArity arity) {
+  const star::NDArray<StoredT> arr = src.template as<StoredT>();
+  if (arity == StardsArity::Scalar) {
+    vm.set<Target>(key, static_cast<Target>(arr.flat(0)));
+    return;
+  }
+  std::vector<Target> vals;
+  vals.reserve(arr.data().size());
+  for (StoredT v : arr.data()) vals.push_back(static_cast<Target>(v));
+  vm.set<std::vector<Target>>(key, vals);
+}
+
 template <typename ArrayLike>
-void setFromStards(VariantMap &vm, const std::string &key,
-                   star::DataType dtype, size_t nelem, const ArrayLike &src) {
-  const bool scalar = (nelem == 1);
+void setFromStards(VariantMap &vm, const std::string &key, star::DataType dtype,
+                   StardsArity arity, const ArrayLike &src) {
   switch (dtype) {
     case star::DataType::STRING: {
       const star::NDArray<std::string> arr = src.template as<std::string>();
-      if (scalar) vm.set<std::string>(key, arr.flat(0));
-      else        vm.set<std::vector<std::string>>(key, arr.data());
+      if (arity == StardsArity::Scalar) vm.set<std::string>(key, arr.flat(0));
+      else vm.set<std::vector<std::string>>(key, arr.data());
       break;
     }
-    case star::DataType::FLOAT32: setDoubleFrom<float>(vm, key, src, scalar); break;
-    case star::DataType::FLOAT64: setDoubleFrom<double>(vm, key, src, scalar); break;
-    case star::DataType::INT8:    setIntFrom<int8_t>(vm, key, src, scalar); break;
-    case star::DataType::INT16:   setIntFrom<int16_t>(vm, key, src, scalar); break;
-    case star::DataType::INT32:   setIntFrom<int32_t>(vm, key, src, scalar); break;
-    case star::DataType::INT64:   setIntFrom<int64_t>(vm, key, src, scalar); break;
-    case star::DataType::UINT8:   setIntFrom<uint8_t>(vm, key, src, scalar); break;
-    case star::DataType::UINT16:  setIntFrom<uint16_t>(vm, key, src, scalar); break;
-    case star::DataType::UINT32:  setIntFrom<uint32_t>(vm, key, src, scalar); break;
-    case star::DataType::UINT64:  setIntFrom<uint64_t>(vm, key, src, scalar); break;
+    case star::DataType::FLOAT32: setNumericFrom<double, float>(vm, key, src, arity); break;
+    case star::DataType::FLOAT64: setNumericFrom<double, double>(vm, key, src, arity); break;
+    case star::DataType::INT8:    setNumericFrom<int, int8_t>(vm, key, src, arity); break;
+    case star::DataType::INT16:   setNumericFrom<int, int16_t>(vm, key, src, arity); break;
+    case star::DataType::INT32:   setNumericFrom<int, int32_t>(vm, key, src, arity); break;
+    case star::DataType::INT64:   setNumericFrom<int, int64_t>(vm, key, src, arity); break;
+    case star::DataType::UINT8:   setNumericFrom<int, uint8_t>(vm, key, src, arity); break;
+    case star::DataType::UINT16:  setNumericFrom<int, uint16_t>(vm, key, src, arity); break;
+    case star::DataType::UINT32:  setNumericFrom<int, uint32_t>(vm, key, src, arity); break;
+    case star::DataType::UINT64:  setNumericFrom<int, uint64_t>(vm, key, src, arity); break;
     default: break;  // Unknown dtype: skip.
   }
 }
@@ -3175,6 +3206,32 @@ struct ArrayNamespaceSource {
   const std::string &key;
   template <typename T> star::NDArray<T> as() const { return ds.get<T>(key); }
 };
+
+template <typename StoredT>
+void storeStards(star::StarDataset &ds, const std::string &key,
+                 std::vector<StoredT> data, size_t arrayThreshold) {
+  const std::vector<size_t> shape{data.size()};
+  star::NDArray<StoredT> arr(std::move(data), shape);
+  if (arr.size() > arrayThreshold) {
+    ds.put(key, std::move(arr));
+  } else {
+    ds.meta.put(key, arr);
+  }
+}
+
+star::CompressionAlgorithm parseStardsCompression(const std::string &name) {
+  if (name == "none")         return star::CompressionAlgorithm::NONE;
+  if (name == "gzip")         return star::CompressionAlgorithm::GZIP;
+  if (name == "zstd")         return star::CompressionAlgorithm::ZSTD;
+  if (name == "lz4")          return star::CompressionAlgorithm::LZ4;
+  if (name == "gzip-shuffle") return star::CompressionAlgorithm::GZIP_SHUFFLE;
+  if (name == "lz4-shuffle")  return star::CompressionAlgorithm::LZ4_SHUFFLE;
+  throw csm::Error(csm::Error::INVALID_USE,
+                   "Unknown STARDS compression '" + name +
+                       "' (expected none, gzip, zstd, lz4, gzip-shuffle, "
+                       "lz4-shuffle)",
+                   "variantMapToStards");
+}
 
 }  // namespace
 
@@ -3195,14 +3252,16 @@ VariantMap variantMapFromStards(const std::string &path) {
   for (const std::string &key : ds->get_metadata_keys()) {
     std::shared_ptr<star::MetadataValue> mv = ds->meta.get(key);
     if (mv) {
-      setFromStards(vm, key, mv->dtype, mv->size(), *mv);
+      setFromStards(vm, key, mv->dtype,
+                    mv->size() == 1 ? StardsArity::Scalar : StardsArity::Vector,
+                    *mv);
     }
   }
 
-  // Array namespace: always multi-element, so pass a size > 1.
+  // Array namespace: only values over the array threshold land here.
   for (const std::string &key : ds->get_all_keys()) {
     ArrayNamespaceSource src{*ds, key};
-    setFromStards(vm, key, ds->dtype_of(key), /*nelem=*/2, src);
+    setFromStards(vm, key, ds->dtype_of(key), StardsArity::Vector, src);
   }
 
   return vm;
@@ -3220,40 +3279,6 @@ csm::RasterGM *getUsgsCsmModelFromStards(const std::string &path,
   return getUsgsCsmModelFromVariantMap(vm, modelName, warnings);
 }
 
-namespace {
-
-// Matching star_translate: over arrayThreshold elements goes to sliceable array
-// storage, everything shorter to the metadata block.
-template <typename T>
-void storeBySize(star::StarDataset &ds, const std::string &key,
-                 star::NDArray<T> arr, size_t arrayThreshold) {
-  if (arr.size() > arrayThreshold) {
-    ds.put(key, std::move(arr));
-  } else {
-    ds.meta.put(key, arr);
-  }
-}
-
-}  // namespace
-
-namespace {
-
-star::CompressionAlgorithm parseStardsCompression(const std::string &name) {
-  if (name == "none")         return star::CompressionAlgorithm::NONE;
-  if (name == "gzip")         return star::CompressionAlgorithm::GZIP;
-  if (name == "zstd")         return star::CompressionAlgorithm::ZSTD;
-  if (name == "lz4")          return star::CompressionAlgorithm::LZ4;
-  if (name == "gzip-shuffle") return star::CompressionAlgorithm::GZIP_SHUFFLE;
-  if (name == "lz4-shuffle")  return star::CompressionAlgorithm::LZ4_SHUFFLE;
-  throw csm::Error(csm::Error::INVALID_USE,
-                   "Unknown STARDS compression '" + name +
-                       "' (expected none, gzip, zstd, lz4, gzip-shuffle, "
-                       "lz4-shuffle)",
-                   "variantMapToStards");
-}
-
-}  // namespace
-
 void variantMapToStards(const VariantMap &vm, const std::string &path,
                         const std::string &compression, size_t blockSize,
                         size_t arrayThreshold) {
@@ -3263,56 +3288,34 @@ void variantMapToStards(const VariantMap &vm, const std::string &path,
   config.block_size = blockSize;
   std::shared_ptr<star::StarDataset> ds = star::StarDataset::create(path, config);
 
-  const std::vector<size_t> scalarShape{1};
+  // int64_t and double are the only numeric widths written; STARDS has no bool
+  // dtype, so bools go out as 0/1 ints, matching star_translate.
   for (const std::string &key : vm.keys()) {
     switch (vm.getValueType(key)) {
-      case VariantMap::ValueType::String: {
-        std::vector<std::string> data{vm.get<std::string>(key)};
-        storeBySize(*ds, key, star::NDArray<std::string>(data, scalarShape),
-                    arrayThreshold);
+      case VariantMap::ValueType::String:
+        storeStards<std::string>(*ds, key, {vm.get<std::string>(key)}, arrayThreshold);
         break;
-      }
-      case VariantMap::ValueType::Int: {
-        std::vector<int64_t> data{vm.get<int>(key)};
-        storeBySize(*ds, key, star::NDArray<int64_t>(data, scalarShape),
-                    arrayThreshold);
+      case VariantMap::ValueType::Int:
+        storeStards<int64_t>(*ds, key, {vm.get<int>(key)}, arrayThreshold);
         break;
-      }
-      case VariantMap::ValueType::Bool: {
-        // No bool dtype in STARDS; store as int (0/1), matching star_translate.
-        std::vector<int64_t> data{vm.get<bool>(key) ? 1 : 0};
-        storeBySize(*ds, key, star::NDArray<int64_t>(data, scalarShape),
-                    arrayThreshold);
+      case VariantMap::ValueType::Bool:
+        storeStards<int64_t>(*ds, key, {vm.get<bool>(key) ? 1 : 0}, arrayThreshold);
         break;
-      }
-      case VariantMap::ValueType::Double: {
-        std::vector<double> data{vm.get<double>(key)};
-        storeBySize(*ds, key, star::NDArray<double>(data, scalarShape),
-                    arrayThreshold);
+      case VariantMap::ValueType::Double:
+        storeStards<double>(*ds, key, {vm.get<double>(key)}, arrayThreshold);
         break;
-      }
       case VariantMap::ValueType::VectorInt: {
-        std::vector<int> v = vm.get<std::vector<int>>(key);
-        std::vector<int64_t> data(v.begin(), v.end());
-        std::vector<size_t> shape{data.size()};
-        storeBySize(*ds, key, star::NDArray<int64_t>(std::move(data), shape),
-                    arrayThreshold);
+        const std::vector<int> v = vm.get<std::vector<int>>(key);
+        storeStards<int64_t>(*ds, key, {v.begin(), v.end()}, arrayThreshold);
         break;
       }
-      case VariantMap::ValueType::VectorDouble: {
-        std::vector<double> v = vm.get<std::vector<double>>(key);
-        std::vector<size_t> shape{v.size()};
-        storeBySize(*ds, key, star::NDArray<double>(std::move(v), shape),
-                    arrayThreshold);
+      case VariantMap::ValueType::VectorDouble:
+        storeStards<double>(*ds, key, vm.get<std::vector<double>>(key), arrayThreshold);
         break;
-      }
-      case VariantMap::ValueType::VectorString: {
-        std::vector<std::string> v = vm.get<std::vector<std::string>>(key);
-        std::vector<size_t> shape{v.size()};
-        storeBySize(*ds, key, star::NDArray<std::string>(std::move(v), shape),
-                    arrayThreshold);
+      case VariantMap::ValueType::VectorString:
+        storeStards<std::string>(*ds, key, vm.get<std::vector<std::string>>(key),
+                                 arrayThreshold);
         break;
-      }
       default:
         throw csm::Error(csm::Error::INVALID_USE,
                          "Cannot write key '" + key +

@@ -7,14 +7,14 @@ This guide explains how to use the USGSCSM WebAssembly module in your web applic
 ### Via NPM
 
 ```bash
-npm install usgscsm-wasm
+npm install @usgs-astrogeology/usgscsm
 ```
 
 ### Via CDN
 
 ```html
 <script type="module">
-  import USGSCSM from 'https://cdn.jsdelivr.net/npm/usgscsm-wasm@2.0.1/dist/usgscsm_wasm.js';
+  import USGSCSM from 'https://cdn.jsdelivr.net/npm/@usgs-astrogeology/usgscsm/dist/usgscsm.js';
 </script>
 ```
 
@@ -27,7 +27,7 @@ See [building_wasm.md](building_wasm.md) for instructions on building from sourc
 ### Loading the Module
 
 ```javascript
-import USGSCSM from 'usgscsm-wasm';
+import USGSCSM from '@usgs-astrogeology/usgscsm';
 
 async function main() {
   // Load the WASM module
@@ -72,6 +72,36 @@ const model = new Module.USGSCSMModel();
 model.loadFromState(stateJson);
 ```
 
+#### From Bytes or a URL (format auto-detected)
+
+When you do not know which of the formats you have — JSON ISD, JSON/`.sup` state,
+msgpack state, or STARDS — let the module detect it from the leading bytes:
+
+```javascript
+// From a buffer
+const buf = await fetch('model.stards').then(r => r.arrayBuffer());
+model.loadFromBytes(new Uint8Array(buf));
+
+// Or fetch and load in one call. CORS applies; a "/vsicurl/" prefix is stripped
+// before fetching. Rejects on a non-OK HTTP status.
+await model.loadFromURL('https://host/model.json');
+await model.loadFromURL('/vsicurl/https://host/model.stards');
+
+// loadFrom takes a URL string, a Uint8Array, or an ArrayBuffer.
+await model.loadFrom(source);
+```
+
+To branch on the format yourself, ask the module rather than parsing:
+
+```javascript
+const { isIsd, modelName } = Module.isUsgsCsmIsd(text);
+if (isIsd) {
+  model.loadFromISD(text, modelName);
+} else if (Module.isUsgsCsmState(text).isState) {
+  model.loadFromState(text);
+}
+```
+
 ### Coordinate Transformations
 
 #### Image to Ground
@@ -83,14 +113,12 @@ const line = 512;    // Row
 const sample = 1024; // Column
 const height = 0;    // Height above ellipsoid in meters
 
+// Throws if no model is loaded or the projection fails.
 const ground = model.imageToGround(line, sample, height);
+console.log(`ECEF coordinates: (${ground.x}, ${ground.y}, ${ground.z})`);
 
-if (ground) {
-  console.log(`ECEF coordinates: (${ground.x}, ${ground.y}, ${ground.z})`);
-  
-  // Convert ECEF to lat/lon if needed (requires external library)
-  // const latLon = ecefToLatLon(ground.x, ground.y, ground.z);
-}
+// Convert ECEF to lat/lon if needed (requires external library)
+// const latLon = ecefToLatLon(ground.x, ground.y, ground.z);
 ```
 
 #### Ground to Image
@@ -102,13 +130,9 @@ const ecefX = 1234567.89; // ECEF X in meters
 const ecefY = 2345678.90; // ECEF Y in meters
 const ecefZ = 3456789.01; // ECEF Z in meters
 
+// The returned fields are line/samp, matching csm::ImageCoord.
 const pixel = model.groundToImage(ecefX, ecefY, ecefZ);
-
-if (pixel) {
-  console.log(`Pixel coordinates: line=${pixel.line}, sample=${pixel.sample}`);
-} else {
-  console.log('Point not visible in this image');
-}
+console.log(`Pixel coordinates: line=${pixel.line}, samp=${pixel.samp}`);
 ```
 
 ### Sensor Queries
@@ -118,13 +142,11 @@ if (pixel) {
 ```javascript
 const position = model.getSensorPosition(512, 1024);
 
-if (position) {
-  const altitude = Math.sqrt(
-    position.x**2 + position.y**2 + position.z**2
-  ) - bodyRadius;
-  
-  console.log(`Camera altitude: ${altitude} meters`);
-}
+const altitude = Math.sqrt(
+  position.x**2 + position.y**2 + position.z**2
+) - bodyRadius;
+
+console.log(`Camera altitude: ${altitude} meters`);
 ```
 
 #### Get Sensor Velocity
@@ -132,13 +154,11 @@ if (position) {
 ```javascript
 const velocity = model.getSensorVelocity(512, 1024);
 
-if (velocity) {
-  const speed = Math.sqrt(
-    velocity.x**2 + velocity.y**2 + velocity.z**2
-  );
-  
-  console.log(`Spacecraft speed: ${speed} m/s`);
-}
+const speed = Math.sqrt(
+  velocity.x**2 + velocity.y**2 + velocity.z**2
+);
+
+console.log(`Spacecraft speed: ${speed} m/s`);
 ```
 
 ### Model Information
@@ -152,7 +172,7 @@ console.log('Platform ID:', model.getPlatformIdentifier());
 
 // Get image dimensions
 const size = model.getImageSize();
-console.log(`Image size: ${size.lines} x ${size.samples} pixels`);
+console.log(`Image size: ${size.line} x ${size.samp} pixels`);
 
 // Check if model is loaded
 if (!model.isLoaded()) {
@@ -179,7 +199,7 @@ no external data files are required. It adds several MB to the module size.
 ## Complete Example
 
 ```javascript
-import USGSCSM from 'usgscsm-wasm';
+import USGSCSM from '@usgs-astrogeology/usgscsm';
 
 async function processImage() {
   // Load WASM module
@@ -199,21 +219,22 @@ async function processImage() {
   
   // Get image dimensions
   const size = model.getImageSize();
-  console.log(`Processing ${size.lines} x ${size.samples} image`);
+  console.log(`Processing ${size.line} x ${size.samp} image`);
   
   // Sample points across the image
   const points = [];
   const step = 100;
   
-  for (let line = 0; line < size.lines; line += step) {
-    for (let sample = 0; sample < size.samples; sample += step) {
-      const ground = model.imageToGround(line, sample, 0);
-      
-      if (ground) {
+  for (let line = 0; line < size.line; line += step) {
+    for (let sample = 0; sample < size.samp; sample += step) {
+      // Projection failures throw, so skip the ones that do not intersect.
+      try {
         points.push({
           pixel: { line, sample },
-          ecef: ground
+          ecef: model.imageToGround(line, sample, 0)
         });
+      } catch (e) {
+        // Ray missed the body at this height.
       }
     }
   }
@@ -244,18 +265,15 @@ import USGSCSM, {
   EcefCoord, 
   ImageCoord, 
   ModelName 
-} from 'usgscsm-wasm';
+} from '@usgs-astrogeology/usgscsm';
 
 async function processWithTypes() {
   const Module = await USGSCSM();
   const model: USGSCSMModel = new Module.USGSCSMModel();
   
   // TypeScript provides autocomplete and type checking
-  const ground: EcefCoord | null = model.imageToGround(100, 200, 0);
-  
-  if (ground) {
-    console.log(`X: ${ground.x}, Y: ${ground.y}, Z: ${ground.z}`);
-  }
+  const ground: EcefCoord = model.imageToGround(100, 200, 0);
+  console.log(`X: ${ground.x}, Y: ${ground.y}, Z: ${ground.z}`);
 }
 ```
 
@@ -318,7 +336,7 @@ For heavy processing, use Web Workers to avoid blocking the main thread:
 
 ```javascript
 // worker.js
-import USGSCSM from 'usgscsm-wasm';
+import USGSCSM from '@usgs-astrogeology/usgscsm';
 
 self.onmessage = async (e) => {
   const Module = await USGSCSM();
@@ -335,28 +353,32 @@ self.onmessage = async (e) => {
 
 ## Error Handling
 
-Always check return values:
+The loaders return a boolean; everything else throws. Nothing returns `null`.
 
 ```javascript
-// Models may fail to load
-if (!model.loadFromISD(isdJson, modelType)) {
-  console.error('Failed to load model');
+// Loading returns false on a model this build cannot construct, and throws on
+// input that is not a valid ISD/state at all.
+try {
+  if (!model.loadFromISD(isdJson, modelType)) {
+    console.error('Failed to load model');
+    return;
+  }
+} catch (e) {
+  console.error('Not a usable ISD:', e);
   return;
 }
 
-// Some operations may return null
-const ground = model.imageToGround(line, sample, height);
-if (ground === null) {
-  console.error('Invalid coordinate or model not loaded');
-  return;
-}
-
-// Check if point is visible
-const pixel = model.groundToImage(x, y, z);
-if (pixel === null) {
-  console.log('Ground point not visible in this image');
+// The accessors throw if no model is loaded or the projection fails.
+try {
+  const ground = model.imageToGround(line, sample, height);
+  const pixel = model.groundToImage(ground.x, ground.y, ground.z);
+} catch (e) {
+  console.error('Projection failed:', e);
 }
 ```
+
+Embind surfaces C++ exceptions, so a thrown value is not always a JS `Error`;
+catch it, but do not rely on `e.message` being present.
 
 ## Browser Compatibility
 
@@ -381,9 +403,13 @@ if (!('WebAssembly' in window)) {
 
 | Format | Size |
 |--------|------|
-| WASM (uncompressed) | ~3.5 MB |
-| JS glue code | ~150 KB |
-| **Total gzipped** | **~1.2 MB** |
+| WASM (uncompressed) | ~12 MB |
+| JS glue code | ~140 KB |
+| **Total gzipped** | **~3 MB** |
+
+Most of that is PROJ and the embedded proj.db. See
+[building_wasm.md](building_wasm.md#bundle-size) for the per-file breakdown and
+how to trim it.
 
 **Important:** Always serve WASM files with gzip compression enabled.
 
@@ -406,8 +432,10 @@ Check the browser console for error messages. Most issues are related to:
 
 ## Next Steps
 
-- See [examples/](../examples/) for complete applications
-- Read the [API reference](../README.md) for detailed documentation
+- See [../tests/wasm/](../tests/wasm/) for runnable examples, including a browser
+  page (`browser.html`)
+- Read the TypeScript definitions in
+  [../src/wasm/usgscsm.d.ts](../src/wasm/usgscsm.d.ts) for the full API
 - Check [building_wasm.md](building_wasm.md) to build from source
 - Report issues at [GitHub](https://github.com/USGS-Astrogeology/usgscsm/issues)
 

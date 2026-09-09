@@ -1,8 +1,7 @@
 /**
  * TypeScript definitions for USGSCSM WebAssembly module
  *
- * @module usgscsm-wasm
- * @version 2.0.1
+ * @module @usgs-astrogeology/usgscsm
  */
 
 /**
@@ -24,7 +23,7 @@ export interface ImageCoord {
   /** Line (row) coordinate, 0-indexed */
   line: number;
   /** Sample (column) coordinate, 0-indexed */
-  sample: number;
+  samp: number;
 }
 
 /**
@@ -32,9 +31,9 @@ export interface ImageCoord {
  */
 export interface ImageSize {
   /** Number of lines (rows) */
-  lines: number;
+  line: number;
   /** Number of samples (columns) */
-  samples: number;
+  samp: number;
 }
 
 /**
@@ -56,7 +55,7 @@ export type ModelName =
  *
  * @example
  * ```typescript
- * import USGSCSM from 'usgscsm-wasm';
+ * import USGSCSM from '@usgs-astrogeology/usgscsm';
  *
  * const Module = await USGSCSM();
  * const model = new Module.USGSCSMModel();
@@ -184,17 +183,16 @@ export class USGSCSMModel {
    * @param line - Image line coordinate (row), 0-indexed
    * @param sample - Image sample coordinate (column), 0-indexed
    * @param height - Height above reference ellipsoid in meters
-   * @returns ECEF ground coordinates, or null if no model loaded
+   * @returns ECEF ground coordinates
+   * @throws if no model is loaded, or if the projection fails
    *
    * @example
    * ```typescript
    * const ground = model.imageToGround(512, 1024, 0);
-   * if (ground) {
-   *   console.log(`Latitude/Longitude at: (${ground.x}, ${ground.y}, ${ground.z})`);
-   * }
+   * console.log(`ECEF: (${ground.x}, ${ground.y}, ${ground.z})`);
    * ```
    */
-  imageToGround(line: number, sample: number, height: number): EcefCoord | null;
+  imageToGround(line: number, sample: number, height: number): EcefCoord;
 
   /**
    * Convert ground coordinates to image coordinates
@@ -204,17 +202,16 @@ export class USGSCSMModel {
    * @param x - ECEF X coordinate in meters
    * @param y - ECEF Y coordinate in meters
    * @param z - ECEF Z coordinate in meters
-   * @returns Image pixel coordinates, or null if no model loaded or point not visible
+   * @returns Image pixel coordinates
+   * @throws if no model is loaded, or if the projection fails
    *
    * @example
    * ```typescript
    * const pixel = model.groundToImage(1234567, 2345678, 3456789);
-   * if (pixel) {
-   *   console.log(`Pixel location: (${pixel.line}, ${pixel.sample})`);
-   * }
+   * console.log(`Pixel location: (${pixel.line}, ${pixel.samp})`);
    * ```
    */
-  groundToImage(x: number, y: number, z: number): ImageCoord | null;
+  groundToImage(x: number, y: number, z: number): ImageCoord;
 
   /**
    * Get sensor position at a given image coordinate
@@ -225,17 +222,16 @@ export class USGSCSMModel {
    *
    * @param line - Image line coordinate
    * @param sample - Image sample coordinate
-   * @returns ECEF sensor position, or null if no model loaded
+   * @returns ECEF sensor position
+   * @throws if no model is loaded
    *
    * @example
    * ```typescript
    * const position = model.getSensorPosition(512, 1024);
-   * if (position) {
-   *   console.log(`Camera at: (${position.x}, ${position.y}, ${position.z})`);
-   * }
+   * console.log(`Camera at: (${position.x}, ${position.y}, ${position.z})`);
    * ```
    */
-  getSensorPosition(line: number, sample: number): EcefCoord | null;
+  getSensorPosition(line: number, sample: number): EcefCoord;
 
   /**
    * Get sensor velocity at a given image coordinate
@@ -245,18 +241,17 @@ export class USGSCSMModel {
    *
    * @param line - Image line coordinate
    * @param sample - Image sample coordinate
-   * @returns ECEF velocity vector in m/s, or null if no model loaded
+   * @returns ECEF velocity vector in m/s
+   * @throws if no model is loaded
    *
    * @example
    * ```typescript
    * const velocity = model.getSensorVelocity(512, 1024);
-   * if (velocity) {
-   *   const speed = Math.sqrt(velocity.x**2 + velocity.y**2 + velocity.z**2);
-   *   console.log(`Spacecraft speed: ${speed} m/s`);
-   * }
+   * const speed = Math.sqrt(velocity.x**2 + velocity.y**2 + velocity.z**2);
+   * console.log(`Spacecraft speed: ${speed} m/s`);
    * ```
    */
-  getSensorVelocity(line: number, sample: number): EcefCoord | null;
+  getSensorVelocity(line: number, sample: number): EcefCoord;
 
   /**
    * Get illumination direction (sun vector) for a ground point
@@ -266,41 +261,34 @@ export class USGSCSMModel {
    * @param x - ECEF X coordinate of ground point in meters
    * @param y - ECEF Y coordinate of ground point in meters
    * @param z - ECEF Z coordinate of ground point in meters
-   * @returns Unit vector from ground to sun, or null if no model loaded
-   *
-   * @example
-   * ```typescript
-   * const sunVec = model.getIlluminationDirection(x, y, z);
-   * if (sunVec) {
-   *   // Calculate incidence angle, etc.
-   * }
-   * ```
+   * @returns Unit vector from ground to sun
+   * @throws if no model is loaded
    */
-  getIlluminationDirection(x: number, y: number, z: number): EcefCoord | null;
+  getIlluminationDirection(x: number, y: number, z: number): EcefCoord;
 
   /**
    * Get image dimensions
    *
-   * @returns Image size in lines and samples, or null if no model loaded
+   * @returns Image size in lines and samples
+   * @throws if no model is loaded
    *
    * @example
    * ```typescript
    * const size = model.getImageSize();
-   * if (size) {
-   *   console.log(`Image is ${size.lines} x ${size.samples} pixels`);
-   * }
+   * console.log(`Image is ${size.line} x ${size.samp} pixels`);
    * ```
    */
-  getImageSize(): ImageSize | null;
+  getImageSize(): ImageSize;
 
   /**
    * Get image start coordinates
    *
    * Most images start at (0, 0), but some may have different origins.
    *
-   * @returns Starting line/sample coordinates, or null if no model loaded
+   * @returns Starting line/sample coordinates
+   * @throws if no model is loaded
    */
-  getImageStart(): ImageCoord | null;
+  getImageStart(): ImageCoord;
 
   /**
    * Get the sensor model name
@@ -355,6 +343,26 @@ export interface USGSCSMModule {
   USGSCSMModel: typeof USGSCSMModel;
 
   /**
+   * Test whether a string is a USGS CSM ISD, and if so which model it names.
+   *
+   * Use this to pick between {@link USGSCSMModel.loadFromISD} and
+   * {@link USGSCSMModel.loadFromState} for input of unknown format.
+   *
+   * @param str - Candidate ISD text
+   * @returns `modelName` is the empty string when `isIsd` is false
+   */
+  isUsgsCsmIsd(str: string): { isIsd: boolean; modelName: string };
+
+  /**
+   * Test whether a string is a USGS CSM model state, and if so which model it
+   * names.
+   *
+   * @param str - Candidate model state text
+   * @returns `modelName` is the empty string when `isState` is false
+   */
+  isUsgsCsmState(str: string): { isState: boolean; modelName: string };
+
+  /**
    * Emscripten virtual filesystem API
    *
    * Allows reading/writing files in the virtual filesystem.
@@ -405,16 +413,30 @@ export interface USGSCSMModule {
 }
 
 /**
+ * Emscripten module instantiation options. Only the subset worth setting from
+ * outside is declared; anything else Emscripten accepts still type-checks.
+ */
+export interface USGSCSMModuleOptions {
+  /** Receives stdout from the module (PROJ and CSM diagnostics). */
+  print?: (text: string) => void;
+  /** Receives stderr from the module. */
+  printErr?: (text: string) => void;
+  /** Resolves a runtime file name (e.g. `usgscsm.wasm`) to a URL. */
+  locateFile?: (path: string, scriptDirectory: string) => string;
+  [key: string]: unknown;
+}
+
+/**
  * Load the USGSCSM WebAssembly module
  *
  * @returns Promise that resolves to the initialized module
  *
  * @example
  * ```typescript
- * import USGSCSM from 'usgscsm-wasm';
+ * import USGSCSM from '@usgs-astrogeology/usgscsm';
  *
  * const Module = await USGSCSM();
  * const model = new Module.USGSCSMModel();
  * ```
  */
-export default function USGSCSM(): Promise<USGSCSMModule>;
+export default function USGSCSM(options?: USGSCSMModuleOptions): Promise<USGSCSMModule>;

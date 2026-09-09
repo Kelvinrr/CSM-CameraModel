@@ -271,12 +271,10 @@ void UsgsAstroLsSensorModel::populateModel(const VariantMap& state) {
   m_sunPosition = state.get<std::vector<double>>("m_sunPosition");
   m_sunVelocity = state.get<std::vector<double>>("m_sunVelocity");
 
-  if (state.contains("m_parameterType")) {
-    auto paramTypeInts = state.get<std::vector<int>>("m_parameterType");
-    m_parameterType.resize(paramTypeInts.size());
-    for (size_t i = 0; i < paramTypeInts.size(); ++i) {
-      m_parameterType[i] = static_cast<csm::param::Type>(paramTypeInts[i]);
-    }
+  std::vector<csm::param::Type> paramTypes =
+      parameterTypesFromState(state, "m_parameterType");
+  if (!paramTypes.empty()) {
+    m_parameterType = paramTypes;
   }
 
   // If computed state values are still default, then compute them
@@ -3125,8 +3123,8 @@ VariantMap UsgsAstroLsSensorModel::constructStateFromIsd(
       "m_maxElevation: {}",
       state["m_minElevation"].dump(), state["m_maxElevation"].dump());
 
-  // Stored as ints, not strings: populateModel and getModelMap read
-  // m_parameterType as a vector<int>, and variantMapFromJson drops string arrays.
+  // Written as ints so the value survives msgpack and STARDS unchanged. Older
+  // states hold the type names instead; parameterTypesFromState reads both.
   state["m_parameterType"] =
       std::vector<int>(NUM_PARAMETERS, static_cast<int>(csm::param::REAL));
 

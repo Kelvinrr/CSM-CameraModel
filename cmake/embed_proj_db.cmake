@@ -3,7 +3,12 @@
 
 file(READ "${PROJ_DB}" _hex HEX)
 
-# Turn the flat hex string into "0x..,0x..," byte initializers.
+# Break into 16-byte (32 hex character) lines first. One 40+ MB line would
+# exceed MSVC's source line limit, and newlines survive the hexify pass below
+# while "0x" prefixes would confuse it if the passes were reversed.
+string(REGEX REPLACE "(................................)" "\\1\n" _hex "${_hex}")
+
+# Turn the hex pairs into "0x..,0x..," byte initializers.
 string(REGEX REPLACE "([0-9a-f][0-9a-f])" "0x\\1," _bytes "${_hex}")
 
 file(SIZE "${PROJ_DB}" _size)

@@ -4,9 +4,10 @@ This document describes how to build USGSCSM as a WebAssembly module for use in 
 
 ## Prerequisites
 
-- **Emscripten SDK (emsdk)** 3.1.40 or later
-- **CMake** 3.10 or later  
-- **Node.js** 16+ (for testing)
+- **Emscripten SDK (emsdk)** 3.1.58 (the version the build is tested against;
+  it pairs with Binaryen 117)
+- **CMake** 3.10 or later
+- **Node.js** 18+ (for testing; the test suite uses `node:test` and ESM)
 - **Git** (with submodules initialized)
 
 ## Installing Emscripten
@@ -69,10 +70,11 @@ This will compile the WebAssembly module. The build may take several minutes.
 
 After a successful build, you'll find the following files in the `dist/` directory:
 
-- **usgscsm_wasm.js** (~100-200 KB) - JavaScript glue code
-- **usgscsm_wasm.wasm** (~3-4 MB uncompressed) - WebAssembly binary
+- **usgscsm.js** (~140 KB) - JavaScript glue code
+- **usgscsm.wasm** (~12 MB uncompressed) - WebAssembly binary
+- **usgscsm.d.ts** - TypeScript definitions
 
-These files work together and must be deployed together.
+The `.js` and `.wasm` work together and must be deployed in the same directory.
 
 ## Build Options
 
@@ -99,12 +101,16 @@ emcmake cmake .. \
 
 ## Bundle Size
 
-Expected output sizes:
+Measured for a default Release build with STARDS and the embedded proj.db:
 
-| Build Type | WASM Size | JS Size | Total (uncompressed) | Gzipped |
-|------------|-----------|---------|---------------------|---------|
-| Release (-O3) | ~3.5 MB | ~150 KB | ~3.7 MB | ~1.2 MB |
-| Debug | ~8 MB | ~200 KB | ~8.2 MB | ~2.5 MB |
+| File | Uncompressed | Gzipped |
+|------|--------------|---------|
+| usgscsm.wasm | ~12 MB | ~3 MB |
+| usgscsm.js | ~140 KB | ~34 KB |
+
+Most of the `.wasm` is PROJ plus the embedded proj.db. `-DUSGSCSM_ENABLE_STARDS=OFF`
+trims it; a Debug build is substantially larger. Check your own build with
+`npm run size`.
 
 **Tip:** Always serve WASM files with gzip compression enabled for production.
 
@@ -112,26 +118,34 @@ Expected output sizes:
 
 ### Node.js Test
 
+From the repo root, after building:
+
 ```bash
-cd ../tests/wasm
-node test_wasm_node.js
+npm test
 ```
+
+This runs `node --test tests/wasm/*.test.mjs`. The suite finds the module in
+`build-wasm/dist/`, `wasmbuild/dist/`, `build/dist/`, or `dist/`; set
+`USGSCSM_WASM=/path/to/dist/usgscsm.js` for anywhere else.
 
 ### Browser Test
 
 ```bash
-# Start a local HTTP server
+# Start a local HTTP server from the repo root
 python3 -m http.server 8000
 
-# Open http://localhost:8000/tests/wasm/test_wasm_basic.html in your browser
+# Open http://localhost:8000/tests/wasm/browser.html in your browser
 ```
+
+Pass `?module=<path to dist/usgscsm.js>` if your build directory is not
+`build-wasm`.
 
 ## Using the WASM Module
 
 ### In a Browser (ES6 Modules)
 
 ```javascript
-import USGSCSM from './dist/usgscsm_wasm.js';
+import USGSCSM from './dist/usgscsm.js';
 
 async function loadModel() {
   const Module = await USGSCSM();
@@ -151,22 +165,20 @@ loadModel();
 
 ### In Node.js
 
+The module is an ES module, so import it — `require()` will not load it.
+
 ```javascript
-const USGSCSM = require('./dist/usgscsm_wasm.js');
-const fs = require('fs');
+import fs from 'node:fs';
+import USGSCSM from './dist/usgscsm.js';
 
-async function main() {
-  const Module = await USGSCSM();
-  const model = new Module.USGSCSMModel();
-  
-  const isd = fs.readFileSync('model.json', 'utf8');
-  model.loadFromISD(isd, 'USGS_ASTRO_FRAME_SENSOR_MODEL');
-  
-  const image = model.groundToImage(10000, 0, 0);
-  console.log(`Pixel: (${image.line}, ${image.sample})`);
-}
+const Module = await USGSCSM();
+const model = new Module.USGSCSMModel();
 
-main();
+const isd = fs.readFileSync('model.json', 'utf8');
+model.loadFromISD(isd, 'USGS_ASTRO_FRAME_SENSOR_MODEL');
+
+const image = model.groundToImage(10000, 0, 0);
+console.log(`Pixel: (${image.line}, ${image.samp})`);
 ```
 
 ## Troubleshooting
@@ -221,19 +233,17 @@ increase the module size (the embedded database is several MB).
 
 ## Next Steps
 
-- See [../tests/wasm/test_wasm_node.js](../tests/wasm/test_wasm_node.js) for usage examples
-- Read the TypeScript definitions in [../src/wasm/usgscsm.d.ts](../src/wasm/usgscsm.d.ts) for API reference
+- See [../tests/wasm/](../tests/wasm/) for runnable usage examples
+- Read [wasm_usage.md](wasm_usage.md) and the TypeScript definitions in
+  [../src/wasm/usgscsm.d.ts](../src/wasm/usgscsm.d.ts) for the API reference
 - Check [../README.md](../README.md) for general USGSCSM documentation
 
 ## Performance
 
-WebAssembly performance is typically 2-5x slower than native C++, but still fast enough for interactive use:
-
-- **imageToGround**: ~0.02-0.05 ms per call
-- **groundToImage**: ~0.02-0.05 ms per call
-- **Throughput**: 20,000-50,000 coordinate transformations per second
-
-Actual performance varies by browser and hardware.
+WebAssembly is slower than the native build — typically by a small integer factor
+— but fast enough for interactive use. No benchmark ships with the project, so
+measure your own workload rather than relying on a quoted figure; results vary
+widely by browser and hardware.
 
 ## Browser Compatibility
 

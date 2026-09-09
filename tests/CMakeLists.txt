@@ -19,10 +19,9 @@ add_executable(runCSMCameraModelTests
                ../external/ale/src/Rotation.cpp
                ../external/ale/src/InterpUtils.cpp)
 
-# StardsTests.cpp needs the same define to un-guard, plus the star:: headers and
-# feature defines that the usgscsm_stards INTERFACE target carries.
+# StardsTests.cpp needs the star:: headers and the gate define, both of which the
+# usgscsm_stards INTERFACE target carries.
 if(USGSCSM_ENABLE_STARDS)
-  target_compile_definitions(runCSMCameraModelTests PRIVATE USGSCSM_ENABLE_STARDS)
   target_link_libraries(runCSMCameraModelTests usgscsm_stards)
 
   # Derived from ISDs already in data/, so not committed. The .stards is converted
@@ -145,10 +144,5 @@ set_tests_properties(test_usgscsm_cam_test_load_binary_pushframe PROPERTIES DEPE
 set_tests_properties(test_usgscsm_cam_test_load_binary_sar PROPERTIES DEPENDS test_usgscsm_cam_test_save_binary_sar)
 set_tests_properties(test_usgscsm_cam_test_load_binary_projected PROPERTIES DEPENDS test_usgscsm_cam_test_save_binary_projected)
 
-# The projected sensor test fixture (constVelocityProj.json) uses a sinusoidal
-# projection with Mars radius (+R=3396190) but body radii of 10 m (synthetic
-# test body). Newer PROJ versions reject this mismatch. The test geometry is
-# intentionally synthetic, so suppress the check.
 gtest_discover_tests(runCSMCameraModelTests
-  WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}/tests
-  PROPERTIES ENVIRONMENT "PROJ_IGNORE_CELESTIAL_BODY=YES")
+  WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}/tests)

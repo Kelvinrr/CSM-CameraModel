@@ -37,7 +37,6 @@ set_target_properties(csmapi PROPERTIES POSITION_INDEPENDENT_CODE ON)
 # MSVC looks for import stubs a static archive has none of.
 target_compile_definitions(csmapi PUBLIC CSM_LIBRARY $<$<PLATFORM_ID:Linux>:LINUX_BUILD>)
 
-# Bare (<RasterGM.h>) and namespaced (<csm/RasterGM.h>) includes are both used.
-target_include_directories(csmapi PUBLIC
-    $<BUILD_INTERFACE:${CSM_SRC_DIR}>
-    $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/external>)
+target_include_directories(csmapi
+    PRIVATE $<BUILD_INTERFACE:${CSM_SRC_DIR}>
+    PUBLIC $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/external>)

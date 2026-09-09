@@ -12,11 +12,7 @@ if(NOT EXISTS "${SQLITE3_SRC_DIR}/sqlite3.c")
     "Run: git submodule update --init --recursive")
 endif()
 
-# PROJ uses the column metadata APIs and opens the DB with SQLITE_OPEN_FULLMUTEX.
-set(USGSCSM_SQLITE3_DEFS
-    SQLITE_ENABLE_COLUMN_METADATA
-    SQLITE_THREADSAFE=1
-)
+include("${CMAKE_CURRENT_LIST_DIR}/../../cmake/sqlite3_defs.cmake")
 
 # Static library compiled into libusgscsm and libproj.
 add_library(usgscsm_sqlite3 STATIC "${SQLITE3_SRC_DIR}/sqlite3.c")

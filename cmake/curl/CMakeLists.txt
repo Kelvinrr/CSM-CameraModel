@@ -45,7 +45,10 @@ else()
       -DOPENSSL_INCLUDE_DIR=${USGSCSM_OPENSSL_INCLUDE_DIR}
       -DOPENSSL_SSL_LIBRARY=${USGSCSM_OPENSSL_SSL_LIB}
       -DOPENSSL_CRYPTO_LIBRARY=${USGSCSM_OPENSSL_CRYPTO_LIB}
-      -DOPENSSL_USE_STATIC_LIBS=ON)
+      -DOPENSSL_USE_STATIC_LIBS=ON
+      -DCURL_CA_BUNDLE=none
+      -DCURL_CA_PATH=none
+      -DCURL_CA_FALLBACK=ON)
   # curl must configure only after the static OpenSSL is built and installed.
   set(CURL_TLS_DEPENDS openssl_ep)
 endif()

@@ -55,35 +55,30 @@ void printUsage(std::string const& progName) {
 "\n"
 "Required:\n"
 "  --model <file>\n"
-"      Input camera model. The format is auto-detected from the file contents\n"
-"      (and, for STARDS, the extension):\n"
+"      Input camera model. The format is auto-detected from the file contents:\n"
 "        - JSON ISD              (a *.json image support data file)\n"
 "        - JSON model state      (getModelState() output; a model-name line\n"
 "                                 followed by the JSON state)\n"
 "        - Binary msgpack state  (as written by --output-binary-model-state)\n"
 "        - GXP .sup file         (model state embedded in a .sup file)\n"
-#ifdef USGSCSM_ENABLE_STARDS
-"        - STARDS state (*.stards) A CSM model state stored in the STARDS binary\n"
-"                                 format. Keys map 1-to-1 to CSM state keys.\n"
-"                                 Create one with --output-stards (below), or\n"
-"                                 with the 'star_translate' tool:\n"
+"        - STARDS state          (a CSM model state in the STARDS binary format,\n"
+"                                 keys mapping 1-to-1 to CSM state keys; needs a\n"
+"                                 build with STARDS support). Write one with\n"
+"                                 --output-stards below, or with 'star_translate':\n"
 "                                   star_translate model_state.json out.stards\n"
 "                                 (a model-state preamble, if present, is\n"
 "                                  stripped automatically).\n"
-#endif
 "\n"
 "Output options (any combination; each writes a file):\n"
 "  --output-model-state <file.json>\n"
 "      Write the model state as JSON (a model-name line followed by the state).\n"
 "  --output-binary-model-state <file.isd>\n"
 "      Write the model state in binary msgpack format.\n"
-#ifdef USGSCSM_ENABLE_STARDS
 "  --output-stards <file.stards>\n"
 "      Write the model state in the STARDS binary format (lz4-shuffle\n"
-"      compression). Keys are stored 1-to-1 with the CSM state; large arrays go\n"
-"      to STARDS array storage and smaller values to the metadata block. The\n"
-"      result reloads directly via --model <file.stards>.\n"
-#endif
+"      compression). Large arrays go to STARDS array storage and smaller values\n"
+"      to the metadata block. Requires a build with STARDS support. The result\n"
+"      reloads directly via --model <file.stards>.\n"
 "  --modify-sup-file <file.sup>\n"
 "      Replace the model state embedded in the given GXP .sup file with the\n"
 "      state of the loaded --model, updating it in place.\n"
@@ -116,12 +111,10 @@ void printUsage(std::string const& progName) {
 "  # Convert an ISD or state to a binary msgpack model state\n"
 "  " << progName << " --model image.json \\\n"
 "      --output-binary-model-state state.isd\n"
-#ifdef USGSCSM_ENABLE_STARDS
 "\n"
 "  # Write a model's state to a STARDS file, then load it back\n"
 "  " << progName << " --model image.json --output-stards state.stards\n"
 "  " << progName << " --model state.stards --sample-rate 100\n"
-#endif
 ;
 }
 
@@ -240,9 +233,11 @@ bool loadCsmCameraModel(std::string const& model_file,
   // plugins are detected. Do not remove this.
   UsgsAstroLsSensorModel lsModel;
 
-#ifdef USGSCSM_ENABLE_STARDS
+  const ModelFormat format = modelFormatOfFile(model_file);
+
   // STARDS binary state file: build directly from the state it carries.
-  if (isStardsFile(model_file)) {
+  if (format == ModelFormat::Stards) {
+#ifdef USGSCSM_ENABLE_STARDS
     std::cout << "Detected STARDS model state: " << model_file << "\n";
     csm::Model *csm = getUsgsCsmModelFromStards(model_file, NULL);
     if (!csm) {
@@ -252,11 +247,15 @@ bool loadCsmCameraModel(std::string const& model_file,
     model = std::shared_ptr<csm::RasterGM>(dynamic_cast<csm::RasterGM*>(csm));
     std::cout << "Loaded a CSM model from STARDS file " << model_file << ".\n";
     return true;
-  }
+#else
+    std::cerr << model_file << " is a STARDS file, which requires a build with "
+              << "STARDS support enabled.\n";
+    return false;
 #endif
+  }
 
-  // Binary model state: detect by first byte, load directly via populateModel
-  if (isMsgpack(model_file)) {
+  // Binary model state: load directly via populateModel
+  if (format == ModelFormat::Msgpack) {
     std::cout << "Detected msgpack binary model state: " << model_file << "\n";
     std::ifstream ifs(model_file, std::ios::binary);
     std::vector<uint8_t> data((std::istreambuf_iterator<char>(ifs)),

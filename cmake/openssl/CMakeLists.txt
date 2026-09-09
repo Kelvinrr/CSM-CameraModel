@@ -17,18 +17,35 @@ set(OPENSSL_PREFIX  "${CMAKE_CURRENT_BINARY_DIR}/openssl")
 set(OPENSSL_BUILD   "${OPENSSL_PREFIX}/build")
 set(OPENSSL_INSTALL "${OPENSSL_PREFIX}/install")
 set(OPENSSL_INCLUDE_DIR "${OPENSSL_INSTALL}/include")
-# Static archive extension differs by toolchain: MSVC produces .lib, Unix .a.
-if(WIN32)
-  set(OPENSSL_CRYPTO_LIB "${OPENSSL_INSTALL}/lib/libcrypto.lib")
-  set(OPENSSL_SSL_LIB    "${OPENSSL_INSTALL}/lib/libssl.lib")
-else()
-  set(OPENSSL_CRYPTO_LIB "${OPENSSL_INSTALL}/lib/libcrypto.a")
-  set(OPENSSL_SSL_LIB    "${OPENSSL_INSTALL}/lib/libssl.a")
-endif()
 
-# Pick the OpenSSL Configure target for the host platform + architecture.
+# Static archive extension differs by toolchain: MSVC produces .lib, Unix .a.
+# Named once here; the archive file names and the make targets below both use it.
+if(WIN32)
+  set(OPENSSL_LIB_SUFFIX ".lib")
+else()
+  set(OPENSSL_LIB_SUFFIX ".a")
+endif()
+set(OPENSSL_CRYPTO_LIBNAME "libcrypto${OPENSSL_LIB_SUFFIX}")
+set(OPENSSL_SSL_LIBNAME    "libssl${OPENSSL_LIB_SUFFIX}")
+set(OPENSSL_CRYPTO_LIB "${OPENSSL_INSTALL}/lib/${OPENSSL_CRYPTO_LIBNAME}")
+set(OPENSSL_SSL_LIB    "${OPENSSL_INSTALL}/lib/${OPENSSL_SSL_LIBNAME}")
+
+# Pick the OpenSSL Configure target for the platform + architecture. OpenSSL
+# builds one architecture per pass, so honor CMAKE_OSX_ARCHITECTURES when it
+# names a single arch and reject a universal-binary request outright.
 if(APPLE)
-  if(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64")
+  set(OPENSSL_APPLE_ARCH "${CMAKE_SYSTEM_PROCESSOR}")
+  if(CMAKE_OSX_ARCHITECTURES)
+    list(LENGTH CMAKE_OSX_ARCHITECTURES _osx_arch_count)
+    if(_osx_arch_count GREATER 1)
+      message(FATAL_ERROR
+        "CMAKE_OSX_ARCHITECTURES=${CMAKE_OSX_ARCHITECTURES}: OpenSSL cannot be "
+        "built as a universal binary in one pass. Configure one architecture, "
+        "or build with -DUSGSCSM_ENABLE_STARDS=OFF to skip OpenSSL entirely.")
+    endif()
+    set(OPENSSL_APPLE_ARCH "${CMAKE_OSX_ARCHITECTURES}")
+  endif()
+  if(OPENSSL_APPLE_ARCH MATCHES "arm64|aarch64")
     set(OPENSSL_TARGET darwin64-arm64-cc)
   else()
     set(OPENSSL_TARGET darwin64-x86_64-cc)
@@ -50,25 +67,37 @@ if(WIN32)
   set(OPENSSL_MAKE nmake)
   set(OPENSSL_ASM_ARG no-asm)
 else()
-  set(OPENSSL_MAKE make -j4)
+  # ExternalProject cannot forward the generator's job server to a plain make,
+  # so pick a level: the user's if set, else one job per core.
+  if(DEFINED ENV{CMAKE_BUILD_PARALLEL_LEVEL})
+    set(OPENSSL_JOBS "$ENV{CMAKE_BUILD_PARALLEL_LEVEL}")
+  else()
+    include(ProcessorCount)
+    ProcessorCount(OPENSSL_JOBS)
+    if(OPENSSL_JOBS EQUAL 0)
+      set(OPENSSL_JOBS 1)
+    endif()
+  endif()
+  set(OPENSSL_MAKE make -j${OPENSSL_JOBS})
   set(OPENSSL_ASM_ARG)  # empty: keep asm on Unix
 endif()
 
-# Naming the archive files as the make target builds exactly those. There is no
-# "just libcrypto" configure flag (no-ssl only disables protocol negotiation).
-if(WIN32)
-  set(OPENSSL_CRYPTO_LIBNAME libcrypto.lib)
-  set(OPENSSL_SSL_LIBNAME    libssl.lib)
-else()
-  set(OPENSSL_CRYPTO_LIBNAME libcrypto.a)
-  set(OPENSSL_SSL_LIBNAME    libssl.a)
-endif()
+# Naming the archives as make targets builds exactly those. There is no "just
+# libcrypto" configure flag (no-ssl only disables protocol negotiation).
 if(APPLE OR WIN32)
   set(OPENSSL_BUILD_LIBS ${OPENSSL_MAKE} ${OPENSSL_CRYPTO_LIBNAME})
   set(OPENSSL_BYPRODUCTS "${OPENSSL_CRYPTO_LIB}")
 else()
   set(OPENSSL_BUILD_LIBS ${OPENSSL_MAKE} ${OPENSSL_SSL_LIBNAME} ${OPENSSL_CRYPTO_LIBNAME})
   set(OPENSSL_BYPRODUCTS "${OPENSSL_CRYPTO_LIB}" "${OPENSSL_SSL_LIB}")
+endif()
+
+# openssldir is compiled in as the runtime CA-store and config location, so it
+# must name a path that exists on the *user's* machine, not in this build tree.
+if(WIN32)
+  set(OPENSSL_DIR_ARG)
+else()
+  set(OPENSSL_DIR_ARG --openssldir=/etc/ssl)
 endif()
 
 # build_generated must run before the object files, or generated headers
@@ -82,7 +111,7 @@ ExternalProject_Add(openssl_ep
   CONFIGURE_COMMAND
     perl ${OPENSSL_SRC_DIR}/Configure ${OPENSSL_TARGET} no-shared no-tests no-docs no-apps
       no-legacy no-engine ${OPENSSL_ASM_ARG}
-      --prefix=${OPENSSL_INSTALL} --openssldir=${OPENSSL_INSTALL}/ssl
+      --prefix=${OPENSSL_INSTALL} ${OPENSSL_DIR_ARG}
       --libdir=lib
   BUILD_COMMAND   ${OPENSSL_MAKE} build_generated COMMAND ${OPENSSL_BUILD_LIBS}
   INSTALL_COMMAND ${OPENSSL_MAKE} install_dev

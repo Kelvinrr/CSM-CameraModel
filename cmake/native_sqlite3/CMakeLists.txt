@@ -9,9 +9,11 @@ if(NOT DEFINED SQLITE3_SRC_DIR)
   message(FATAL_ERROR "SQLITE3_SRC_DIR must be set to the sqlite amalgamation dir")
 endif()
 
+include("${CMAKE_CURRENT_LIST_DIR}/../sqlite3_defs.cmake")
+
 add_executable(sqlite3 "${SQLITE3_SRC_DIR}/shell.c" "${SQLITE3_SRC_DIR}/sqlite3.c")
 target_include_directories(sqlite3 PRIVATE "${SQLITE3_SRC_DIR}")
-target_compile_definitions(sqlite3 PRIVATE SQLITE_THREADSAFE=1)
+target_compile_definitions(sqlite3 PRIVATE ${USGSCSM_SQLITE3_DEFS})
 
 # dl provides sqlite's optional extension loading on Unix; harmless if absent.
 find_library(DL_LIB dl)

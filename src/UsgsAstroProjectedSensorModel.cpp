@@ -35,10 +35,56 @@ OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
 
 #include "ale/Util.h"
 
+#include <cstdlib>
+
 using json = nlohmann::json;
 
 VariantMap variantMapFromJson(const nlohmann::json& j);
 nlohmann::json jsonFromVariantMap(const VariantMap& vm);
+
+namespace {
+
+// PROJ cannot match the celestial-body names of two non-Earth CRSes and refuses
+// the transform unless PROJ_IGNORE_CELESTIAL_BODY is set. 
+class ScopedCelestialBodyOverride {
+ public:
+  ScopedCelestialBodyOverride() {
+    // A caller-set value, of any content, always wins.
+    if (getenv(NAME) != nullptr) return;
+    m_applied = true;
+    put("YES");
+  }
+
+  ~ScopedCelestialBodyOverride() {
+    if (m_applied) clear();
+  }
+
+  ScopedCelestialBodyOverride(const ScopedCelestialBodyOverride &) = delete;
+  ScopedCelestialBodyOverride &operator=(const ScopedCelestialBodyOverride &) = delete;
+
+ private:
+  static constexpr const char *NAME = "PROJ_IGNORE_CELESTIAL_BODY";
+
+  static void put(const char *value) {
+#ifdef _WIN32
+    _putenv_s(NAME, value);
+#else
+    setenv(NAME, value, /*overwrite=*/1);
+#endif
+  }
+
+  static void clear() {
+#ifdef _WIN32
+    _putenv_s(NAME, "");
+#else
+    unsetenv(NAME);
+#endif
+  }
+
+  bool m_applied = false;
+};
+
+}  // namespace
 
 const std::string UsgsAstroProjectedSensorModel::_SENSOR_MODEL_NAME =
     "USGS_ASTRO_PROJECTED_SENSOR_MODEL";
@@ -126,9 +172,14 @@ void UsgsAstroProjectedSensorModel::populateModel(const VariantMap& state) {
 #ifdef USGSCSM_EMBED_PROJ_DB
   // Serve proj.db from the copy embedded in the plugin, so no loose file or
   // PROJ_DATA is needed at runtime. The VFS ignores the path; it is nominal.
-  const std::string &vfsName = usgscsm::ensureProjDbVfsRegistered();
-  proj_context_set_sqlite3_vfs_name(C, vfsName.c_str());
-  proj_context_set_database_path(C, "proj.db", nullptr, nullptr);
+  // If it could not be registered, leave PROJ looking on disk for proj.db.
+  if (const char *vfsName = usgscsm::ensureProjDbVfsRegistered()) {
+    proj_context_set_sqlite3_vfs_name(C, vfsName);
+    proj_context_set_database_path(C, "proj.db", nullptr, nullptr);
+  } else {
+    LOG_WARN("Could not register the in-memory proj.db VFS; falling back to "
+             "PROJ's on-disk database lookup.");
+  }
 #endif
 
   m_isdProj = proj_create(C, (m_projString + " +type=crs").c_str());
@@ -150,18 +201,11 @@ void UsgsAstroProjectedSensorModel::populateModel(const VariantMap& state) {
     return;
   }
 
-  // PROJ often cannot match the celestial-body names of two non-Earth CRSes,
-  // failing proj_create_crs_to_crs_from_pj with "no match found". Planetary
-  // imagery is the norm here, so default the override on; a caller-set value wins.
-  if (getenv("PROJ_IGNORE_CELESTIAL_BODY") == nullptr) {
-#ifdef _WIN32
-    _putenv_s("PROJ_IGNORE_CELESTIAL_BODY", "YES");
-#else
-    setenv("PROJ_IGNORE_CELESTIAL_BODY", "YES", /*overwrite=*/0);
-#endif
+  {
+    ScopedCelestialBodyOverride ignoreCelestialBody;
+    m_isdProj2ecefProj =
+        proj_create_crs_to_crs_from_pj(C, m_isdProj, m_ecefProj, 0, 0);
   }
-
-  m_isdProj2ecefProj = proj_create_crs_to_crs_from_pj(C, m_isdProj, m_ecefProj, 0, 0);
 
   proj_context_destroy(C);
 

@@ -2,7 +2,6 @@
 
 #include <cstring>
 #include <mutex>
-#include <string>
 
 #include <sqlite3.h>
 
@@ -145,11 +144,14 @@ int memCurrentTimeInt64(sqlite3_vfs*, sqlite3_int64* pTime) {
 
 namespace usgscsm {
 
-const std::string& ensureProjDbVfsRegistered() {
-  static const std::string name = kVfsName;
+const char* ensureProjDbVfsRegistered() {
+  static bool registered = false;
   static std::once_flag once;
   std::call_once(once, []() {
     g_defaultVfs = sqlite3_vfs_find(nullptr);
+    if (!g_defaultVfs) {
+      return;
+    }
 
     static sqlite3_vfs mem_vfs;
     std::memset(&mem_vfs, 0, sizeof(mem_vfs));
@@ -168,9 +170,9 @@ const std::string& ensureProjDbVfsRegistered() {
     mem_vfs.xCurrentTimeInt64 = memCurrentTimeInt64;
 
     // Register but do not make default: PROJ selects it by name.
-    sqlite3_vfs_register(&mem_vfs, 0);
+    registered = sqlite3_vfs_register(&mem_vfs, 0) == SQLITE_OK;
   });
-  return name;
+  return registered ? kVfsName : nullptr;
 }
 
 }  // namespace usgscsm

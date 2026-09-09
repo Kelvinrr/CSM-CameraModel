@@ -196,14 +196,14 @@ double getWavelength(nlohmann::json isd, csm::WarningList *list = nullptr);
 
 nlohmann::json stateAsJson(std::string modelState);
 
+
 VariantMap variantMapFromJson(const nlohmann::json& j);
 nlohmann::json jsonFromVariantMap(const VariantMap& vm);
 
-// Check if a file is in msgpack binary format by peeking at the first byte.
-// Per the msgpack spec (github.com/msgpack/msgpack/blob/master/spec.md),
-// a map object starts with 0x80-0x8F (fixmap), 0xDE (map16), or 0xDF (map32).
-// JSON starts with '{' (0x7B), so there is no ambiguity.
-bool isMsgpack(std::string const& filename);
+enum class ModelFormat { Unknown, Text, Msgpack, Stards };
+
+ModelFormat modelFormatFromBytes(const std::string& bytes);
+ModelFormat modelFormatOfFile(std::string const& filename);
 
 // Read the contents of the file out as a string
 bool readFileInString(std::string const& filename, std::string & str);
@@ -233,21 +233,27 @@ VariantMap getUsgsCsmModelMap(csm::RasterGM *model);
 bool isUsgsCsmIsd(const std::string &str, std::string &modelName);
 bool isUsgsCsmState(const std::string &str, std::string &modelName);
 
+std::vector<csm::param::Type> parameterTypesFromState(const VariantMap &state,
+                                                      const std::string &key);
+
 #ifdef USGSCSM_ENABLE_STARDS
+
+extern const char *const STARDS_DEFAULT_COMPRESSION;
+constexpr size_t STARDS_DEFAULT_BLOCK_SIZE = 1024 * 1024;
+constexpr size_t STARDS_DEFAULT_ARRAY_THRESHOLD = 100;
 
 VariantMap variantMapFromStards(const std::string &path);
 csm::RasterGM *getUsgsCsmModelFromStards(const std::string &path, csm::WarningList *warnings);
-bool isStardsFile(const std::string &path);
 
 void variantMapToStards(const VariantMap &vm, const std::string &path,
-                        const std::string &compression = "lz4-shuffle",
-                        size_t blockSize = 1024 * 1024,
-                        size_t arrayThreshold = 100);
+                        const std::string &compression = STARDS_DEFAULT_COMPRESSION,
+                        size_t blockSize = STARDS_DEFAULT_BLOCK_SIZE,
+                        size_t arrayThreshold = STARDS_DEFAULT_ARRAY_THRESHOLD);
 
 void writeUsgsCsmModelToStards(csm::RasterGM *model, const std::string &path,
-                               const std::string &compression = "lz4-shuffle",
-                               size_t blockSize = 1024 * 1024,
-                               size_t arrayThreshold = 100);
+                               const std::string &compression = STARDS_DEFAULT_COMPRESSION,
+                               size_t blockSize = STARDS_DEFAULT_BLOCK_SIZE,
+                               size_t arrayThreshold = STARDS_DEFAULT_ARRAY_THRESHOLD);
 #endif
 
 #endif  // INCLUDE_USGSCSM_UTILITIES_H_

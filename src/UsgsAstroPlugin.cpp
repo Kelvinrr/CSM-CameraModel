@@ -484,7 +484,7 @@ csm::Model *UsgsAstroPlugin::constructModelFromISD(
 
 #ifdef USGSCSM_ENABLE_STARDS
   // A STARDS file holds a model state, not an ISD: skip the ISD pipeline.
-  if (isStardsFile(imageSupportDataOriginal.filename())) {
+  if (modelFormatOfFile(imageSupportDataOriginal.filename()) == ModelFormat::Stards) {
     LOG_DEBUG( "Constructing model from STARDS state file");
     return getUsgsCsmModelFromStards(imageSupportDataOriginal.filename(), warnings);
   }
@@ -502,7 +502,6 @@ csm::Model *UsgsAstroPlugin::constructModelFromISD(
       return projModel;
     } catch (std::exception &e) {
       delete projModel;
-
       csm::Error::ErrorType aErrorType =
           csm::Error::SENSOR_MODEL_NOT_CONSTRUCTIBLE;
       std::string aMessage = "Could not construct model [";
