@@ -345,12 +345,41 @@ console.log('ground:', ground, 'pixel:', pixel);
 Run it with Node (18+; the module uses ESM and top-level `await`):
 
 ```bash
-python3 -m http.server 8000
-# then open http://localhost:8000/tests/wasm/browser.html
+node wasm_smoke.mjs
 ```
 
 You can generate a model state from an ISD with the native `usgscsm_cam_test`
 tool (`--output-model-state`), or with `csm_translate`.
+
+**Testing the WASM module (browser):** WebAssembly cannot be loaded over
+`file://`, so serve the build output and load it from a page. Save this next to
+`dist/` in your build directory:
+
+```html
+<!DOCTYPE html>
+<meta charset="utf-8">
+<pre id="out">Loading...</pre>
+<script type="module">
+  import USGSCSM from './dist/usgscsm.js';
+
+  const Module = await USGSCSM();
+  const model = new Module.USGSCSMModel();
+
+  const isd = await fetch('model.json').then(r => r.text());
+  model.loadFromISD(isd, 'USGS_ASTRO_FRAME_SENSOR_MODEL');
+
+  const ground = model.imageToGround(8, 8, 0);
+  const pixel = model.groundToImage(ground.x, ground.y, ground.z);
+  out.textContent = JSON.stringify({ ground, pixel }, null, 2);
+</script>
+```
+
+Then serve that directory and open the page:
+
+```bash
+cd build-wasm && python3 -m http.server 8000
+# then open http://localhost:8000/smoke.html
+```
 
 ### Browser Usage
 

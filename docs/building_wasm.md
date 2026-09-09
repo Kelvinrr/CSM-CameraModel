@@ -130,15 +130,15 @@ This runs `node --test tests/wasm/*.test.mjs`. The suite finds the module in
 
 ### Browser Test
 
-```bash
-# Start a local HTTP server from the repo root
-python3 -m http.server 8000
+WebAssembly cannot be loaded over `file://`, so serve the build directory:
 
-# Open http://localhost:8000/tests/wasm/browser.html in your browser
+```bash
+cd build-wasm && python3 -m http.server 8000
 ```
 
-Pass `?module=<path to dist/usgscsm.js>` if your build directory is not
-`build-wasm`.
+Then open a page that imports `./dist/usgscsm.js`; see
+[the browser example in the README](../README.md#building-for-webassembly) for a
+minimal one.
 
 ## Using the WASM Module
 

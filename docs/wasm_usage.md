@@ -432,8 +432,7 @@ Check the browser console for error messages. Most issues are related to:
 
 ## Next Steps
 
-- See [../tests/wasm/](../tests/wasm/) for runnable examples, including a browser
-  page (`browser.html`)
+- See [../tests/wasm/](../tests/wasm/) for runnable examples
 - Read the TypeScript definitions in
   [../src/wasm/usgscsm.d.ts](../src/wasm/usgscsm.d.ts) for the full API
 - Check [building_wasm.md](building_wasm.md) to build from source
