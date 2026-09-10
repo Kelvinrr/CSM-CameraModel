@@ -50,8 +50,11 @@ OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
 #include <nlohmann/json.hpp>
 using json = nlohmann::json;
 
+// A character set for find_last_of, not a separator to build paths with: Windows
+// accepts either slash so both must count, while on POSIX a backslash is a legal
+// filename character and must not split the path.
 #ifdef _WIN32
-#define DIR_DELIMITER_STR "\\"
+#define DIR_DELIMITER_STR "\\/"
 #else
 #define DIR_DELIMITER_STR "/"
 #endif
