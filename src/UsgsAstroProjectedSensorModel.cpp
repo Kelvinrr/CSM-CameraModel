@@ -86,9 +86,6 @@ class ScopedCelestialBodyOverride {
 
 }  // namespace
 
-const std::string UsgsAstroProjectedSensorModel::_SENSOR_MODEL_NAME =
-    "USGS_ASTRO_PROJECTED_SENSOR_MODEL";
-
 const std::string UsgsAstroProjectedSensorModel::_STATE_KEYWORD[] = {
     "m_modelName",
     "m_subModelName",

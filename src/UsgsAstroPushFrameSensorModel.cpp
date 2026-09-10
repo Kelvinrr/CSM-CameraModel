@@ -41,8 +41,6 @@ OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
 #include <nlohmann/json.hpp>
 using json = nlohmann::json;
 
-const std::string UsgsAstroPushFrameSensorModel::_SENSOR_MODEL_NAME =
-    "USGS_ASTRO_PUSH_FRAME_SENSOR_MODEL";
 const int UsgsAstroPushFrameSensorModel::NUM_PARAMETERS = 16;
 const std::string UsgsAstroPushFrameSensorModel::PARAMETER_NAME[] = {
     "IT Pos. Bias   ",  // 0 - "In Track Position Bias" - a constant shift in the spacecraft's position parallel to the flight path 
