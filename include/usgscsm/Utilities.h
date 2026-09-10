@@ -238,7 +238,11 @@ std::vector<csm::param::Type> parameterTypesFromState(const VariantMap &state,
 
 #ifdef USGSCSM_ENABLE_STARDS
 
-extern const char *const STARDS_DEFAULT_COMPRESSION;
+// Inline rather than an extern symbol defined in the library: these are used as
+// default arguments below, so they are evaluated in the caller. A data symbol
+// crossing a DLL boundary needs __declspec(dllimport) on the declaration, which
+// WINDOWS_EXPORT_ALL_SYMBOLS cannot supply, so an extern one fails to link on MSVC.
+inline constexpr const char *STARDS_DEFAULT_COMPRESSION = "lz4-shuffle";
 constexpr size_t STARDS_DEFAULT_BLOCK_SIZE = 1024 * 1024;
 constexpr size_t STARDS_DEFAULT_ARRAY_THRESHOLD = 100;
 

@@ -3151,8 +3151,6 @@ bool isUsgsCsmState(const std::string &str, std::string &modelName) {
 
 #ifdef USGSCSM_ENABLE_STARDS
 
-const char *const STARDS_DEFAULT_COMPRESSION = "lz4-shuffle";
-
 namespace {
 
 // STARDS stores everything as an NDArray, so a scalar and a 1-element array are
