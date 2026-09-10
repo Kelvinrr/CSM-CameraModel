@@ -55,6 +55,14 @@ if(WIN32)
   option(CMAKE_USE_WIN32_THREADS_INIT "using WIN32 threads" ON)
   option(gtest_disable_pthreads "Disable uses of pthreads in gtest." ON)
   target_link_libraries(runCSMCameraModelTests usgscsm ${GTEST_LIBRARIES} ${GTEST_MAIN_LIBRARIES})
+
+  # Windows has no RPATH: the loader looks next to the .exe, and usgscsm.dll is built
+  # one directory up. Without this the exe cannot start at all (0xc0000135), which
+  # fails gtest_discover_tests' POST_BUILD probe as well as the tests themselves.
+  # Registered before gtest_discover_tests so it runs first.
+  add_custom_command(TARGET runCSMCameraModelTests POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            $<TARGET_FILE:usgscsm> $<TARGET_FILE_DIR:runCSMCameraModelTests>)
 else()
   target_link_libraries(runCSMCameraModelTests usgscsm ${GTEST_LIBRARIES} ${GTEST_MAIN_LIBRARIES} pthread)
 endif()
