@@ -66,11 +66,16 @@ if(WIN32)
 else()
   target_link_libraries(runCSMCameraModelTests usgscsm ${GTEST_LIBRARIES} ${GTEST_MAIN_LIBRARIES} pthread)
 endif()
-add_executable(pluginRegistryHost PluginRegistryHost.cpp)
-target_include_directories(pluginRegistryHost PRIVATE ${CSM_INCLUDE_DIR})
-target_link_libraries(pluginRegistryHost ${CSM_LIBRARY} ${CMAKE_DL_LIBS})
-add_test(NAME test_plugin_registers_with_host
-    COMMAND pluginRegistryHost $<TARGET_FILE:usgscsm>)
+# A statically linked csmapi gives the plugin its own csm::Plugin::theList, so it cannot
+# register with a host that has its own copy. This test asserts the opposite, and the host
+# would link the same static archive anyway, leaving two registries in one process.
+if(NOT USGSCSM_STATIC_CSM)
+  add_executable(pluginRegistryHost PluginRegistryHost.cpp)
+  target_include_directories(pluginRegistryHost PRIVATE ${CSM_INCLUDE_DIR})
+  target_link_libraries(pluginRegistryHost ${CSM_LIBRARY} ${CMAKE_DL_LIBS})
+  add_test(NAME test_plugin_registers_with_host
+      COMMAND pluginRegistryHost $<TARGET_FILE:usgscsm>)
+endif()
 
 # Test the test_usgscsm_cam_test program. Output files are written to build directory
 # with unique names to avoid race conditions during parallel test execution.

@@ -49,6 +49,7 @@ endif()
 # Use external or embedded dependencies
 option(USGSCSM_EXTERNAL_DEPS "If the library should be built with external or embedded dependencies" OFF)
 option(USGSCSM_ENABLE_STARDS "Build support for instantiating models from STARDS state files" ON)
+option(USGSCSM_STATIC_CSM "Link the CSM API statically into the plugin instead of using the shared csmapi" OFF)
 option(ENABLE_CURL "Set to build the curl components of proj" OFF)
 option(ENABLE_TIFF "Set to build the TIFF components of proj" OFF)
 option(BUILD_TESTING "Set to build the proj tests" OFF)
@@ -77,7 +78,7 @@ set(USGSCSM_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/include/usgscsm"
 ################################################################################
 # CSM API
 ################################################################################
-if(EMSCRIPTEN)
+if(EMSCRIPTEN OR USGSCSM_STATIC_CSM)
   add_subdirectory(cmake/csm "${CMAKE_CURRENT_BINARY_DIR}/csm")
   set(CSM_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external")
   set(CSM_LIBRARY csmapi)
@@ -773,6 +774,12 @@ set_target_properties(usgscsm PROPERTIES
     SOVERSION 1
     WINDOWS_EXPORT_ALL_SYMBOLS ON
 )
+
+# Distinct name so the self-contained variant can ship beside the one that needs a
+# shared csmapi. WASM ships the separate usgscsm_wasm target, which sets its own name.
+if(USGSCSM_STATIC_CSM AND NOT EMSCRIPTEN)
+  set_target_properties(usgscsm PROPERTIES OUTPUT_NAME usgscsmstatic)
+endif()
 
 set(USGSCSM_INCLUDE_DIRS "${USGSCSM_INCLUDE_DIRS}"
                          "${EIGEN3_INCLUDE_DIR}"

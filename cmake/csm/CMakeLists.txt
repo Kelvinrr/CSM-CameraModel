@@ -1,7 +1,9 @@
 # Static CSM API from the pristine submodule at external/csm, whose own CMakeLists
-# hardcodes SHARED. WASM only: a browser has no loader to share a csmapi through, so
-# the module must carry its own. Native builds take the shared csmapi from conda
-# instead -- see the csm::Plugin::theList note in the root CMakeLists.
+# hardcodes SHARED. Reached by WASM, which has no loader to share a csmapi through, and
+# by USGSCSM_STATIC_CSM, which builds a self-contained plugin for hosts that cannot
+# supply csmapi. Both give the plugin a private csm::Plugin::theList, so it cannot
+# register with a host holding its own csmapi -- native builds default to conda's shared
+# csmapi for that reason.
 
 cmake_minimum_required(VERSION 3.10)
 
