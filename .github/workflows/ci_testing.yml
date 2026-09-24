@@ -93,13 +93,20 @@ jobs:
           conda create -y -p $env:CSM303_PREFIX -c conda-forge "csm=3.0.3.3"
           if ($LASTEXITCODE -ne 0) { throw "conda create failed" }
 
-          New-Item -ItemType Directory -Force -Path build-shared-303 | Out-Null
-          cd build-shared-303
-          cmake -G "Visual Studio 17 2022" -DUSGSCSM_BUILD_DOCS=OFF -DCMAKE_WINDOWS_EXPORT_ALL_SYMBOLS=ON `
-                -DUSGSCSM_BUILD_TESTS=OFF `
-                -DCSM_INCLUDE_DIR:PATH="$env:CSM303_PREFIX\Library\include" `
-                -DCSM_LIBRARY:FILEPATH="$env:CSM303_PREFIX\Library\lib\csmapi.lib" ..
-          cmake --build . --target ALL_BUILD --config Release
+          $cmakeArgs = @(
+            '-S', '.', '-B', 'build-shared-303',
+            '-G', 'Visual Studio 17 2022',
+            '-DUSGSCSM_BUILD_DOCS=OFF',
+            '-DCMAKE_WINDOWS_EXPORT_ALL_SYMBOLS=ON',
+            '-DUSGSCSM_BUILD_TESTS=OFF',
+            "-DCSM_INCLUDE_DIR:PATH=$env:CSM303_PREFIX\Library\include",
+            "-DCSM_LIBRARY:FILEPATH=$env:CSM303_PREFIX\Library\lib\csmapi.lib"
+          )
+          Write-Host "cmake $cmakeArgs"
+          cmake @cmakeArgs
+          if ($LASTEXITCODE -ne 0) { throw "configure failed for the CSM 3.0.3 shared build" }
+          cmake --build build-shared-303 --target ALL_BUILD --config Release
+          if ($LASTEXITCODE -ne 0) { throw "build failed for the CSM 3.0.3 shared build" }
 
       # Static csmapi, one build per API version. USGSCSM_CSM_VERSION downloads the pinned
       # upstream release; the external/csm submodule only carries 3.0.3-era sources.
@@ -109,10 +116,19 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           foreach ($v in @('3.1.0', '3.0.3')) {
-            New-Item -ItemType Directory -Force -Path "build-static-$v" | Out-Null
-            cmake -S . -B "build-static-$v" -G "Visual Studio 17 2022" `
-                  -DUSGSCSM_BUILD_DOCS=OFF -DCMAKE_WINDOWS_EXPORT_ALL_SYMBOLS=ON `
-                  -DUSGSCSM_BUILD_TESTS=OFF -DUSGSCSM_STATIC_CSM=ON -DUSGSCSM_CSM_VERSION=$v
+            # Argument array, not a backtick-continued line: an unquoted -DFOO=$v is passed
+            # to the native command literally, which lands in the cache as the string '$v'.
+            $cmakeArgs = @(
+              '-S', '.', '-B', "build-static-$v",
+              '-G', 'Visual Studio 17 2022',
+              '-DUSGSCSM_BUILD_DOCS=OFF',
+              '-DCMAKE_WINDOWS_EXPORT_ALL_SYMBOLS=ON',
+              '-DUSGSCSM_BUILD_TESTS=OFF',
+              '-DUSGSCSM_STATIC_CSM=ON',
+              "-DUSGSCSM_CSM_VERSION=$v"
+            )
+            Write-Host "cmake $cmakeArgs"
+            cmake @cmakeArgs
             if ($LASTEXITCODE -ne 0) { throw "configure failed for CSM $v" }
             cmake --build "build-static-$v" --target ALL_BUILD --config Release
             if ($LASTEXITCODE -ne 0) { throw "build failed for CSM $v" }

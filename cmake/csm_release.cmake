@@ -8,6 +8,14 @@ set(USGSCSM_CSM_SHA256_3.0.3 "4e60176876d31da45bcb48ef29f380cdbf3d64d5738066be7d
 
 # Sets CSM_SRC_DIR and CSM_PARENT_INCLUDE_DIR for cmake/csm to consume.
 function(usgscsm_fetch_csm_release version)
+  # Caught here rather than as a puzzling checksum miss further down: an unexpanded shell
+  # variable or a typo arrives as a perfectly ordinary string.
+  if(NOT version MATCHES "^[0-9]+(\\.[0-9]+)+$")
+    message(FATAL_ERROR
+      "USGSCSM_CSM_VERSION is '${version}', which is not a version number. "
+      "Expected something like 3.1.0 or 3.0.3.")
+  endif()
+
   set(root "${CMAKE_BINARY_DIR}/csm-upstream/${version}")
   # The directory must be named "csm" so #include <csm/csm.h> resolves against its parent.
   set(src "${root}/csm")
@@ -19,7 +27,8 @@ function(usgscsm_fetch_csm_release version)
       set(sha "${USGSCSM_CSM_SHA256_${version}}")
     else()
       message(FATAL_ERROR
-        "No checksum on file for CSM ${version}. Pass -DUSGSCSM_CSM_TARBALL_SHA256=<sha256>.")
+        "No checksum on file for CSM ${version} (have 3.1.0, 3.0.3). "
+        "Pass -DUSGSCSM_CSM_TARBALL_SHA256=<sha256>.")
     endif()
 
     set(tarball "${root}/csm-${version}.tar.gz")
