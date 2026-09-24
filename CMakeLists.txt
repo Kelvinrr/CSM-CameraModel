@@ -50,6 +50,8 @@ endif()
 option(USGSCSM_EXTERNAL_DEPS "If the library should be built with external or embedded dependencies" OFF)
 option(USGSCSM_ENABLE_STARDS "Build support for instantiating models from STARDS state files" ON)
 option(USGSCSM_STATIC_CSM "Link the CSM API statically into the plugin instead of using the shared csmapi" OFF)
+set(USGSCSM_CSM_VERSION "" CACHE STRING
+    "CSM API release to build statically against, e.g. 3.1.0 or 3.0.3; empty uses the external/csm submodule")
 option(ENABLE_CURL "Set to build the curl components of proj" OFF)
 option(ENABLE_TIFF "Set to build the TIFF components of proj" OFF)
 option(BUILD_TESTING "Set to build the proj tests" OFF)
@@ -79,8 +81,15 @@ set(USGSCSM_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/include/usgscsm"
 # CSM API
 ################################################################################
 if(EMSCRIPTEN OR USGSCSM_STATIC_CSM)
+  if(USGSCSM_CSM_VERSION)
+    include(cmake/csm_release.cmake)
+    usgscsm_fetch_csm_release("${USGSCSM_CSM_VERSION}")
+  else()
+    set(CSM_SRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/csm")
+    set(CSM_PARENT_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external")
+  endif()
   add_subdirectory(cmake/csm "${CMAKE_CURRENT_BINARY_DIR}/csm")
-  set(CSM_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external")
+  set(CSM_INCLUDE_DIR "${CSM_PARENT_INCLUDE_DIR}")
   set(CSM_LIBRARY csmapi)
 else()
   set(USGSCSM_CONDA_ROOTS "$ENV{CONDA_PREFIX}" "$ENV{CONDA_PREFIX}/Library"
@@ -96,6 +105,19 @@ else()
   message(STATUS "Found CSM Library: ${CSM_LIBRARY}")
   message(STATUS "Found CSM Include Directory: ${CSM_INCLUDE_DIR}")
 endif()
+
+# Cached so packaging can label an artifact with the API version actually compiled into it
+# rather than the one it was meant to have. Read from the header either branch settled on.
+file(STRINGS "${CSM_INCLUDE_DIR}/csm/csm.h" USGSCSM_CSM_VERSION_LINE
+     REGEX "CURRENT_CSM_VERSION[ \t]+csm::Version")
+if(USGSCSM_CSM_VERSION_LINE MATCHES "([0-9]+)[ ,]+([0-9]+)[ ,]+([0-9]+)")
+  set(USGSCSM_CSM_API_VERSION "${CMAKE_MATCH_1}.${CMAKE_MATCH_2}.${CMAKE_MATCH_3}"
+      CACHE INTERNAL "CSM API version declared by the csm.h being compiled against")
+else()
+  message(FATAL_ERROR
+    "Could not parse CURRENT_CSM_VERSION from ${CSM_INCLUDE_DIR}/csm/csm.h")
+endif()
+message(STATUS "CSM API version: ${USGSCSM_CSM_API_VERSION}")
 
 if(USGSCSM_EXTERNAL_DEPS)
   message(STATUS "Using external dependencies")

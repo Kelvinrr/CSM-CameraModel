@@ -78,15 +78,45 @@ jobs:
           cd build
           ctest -C Release --output-on-failure
 
-      # Second variant: csmapi linked in statically, so the DLL stands alone. Separate
-      # build tree because USGSCSM_STATIC_CSM switches the whole configuration.
-      - name: Build static-CSM variant
+      # The dev release ships four plugins: {shared csmapi, static csmapi} x {CSM 3.1.0,
+      # CSM 3.0.3}. The tested build above is the shared/3.1.0 one, since environment.yml
+      # asks for csm >= 3.1.0. The three below fill in the rest.
+
+      # Shared csmapi against the older API. CSM_INCLUDE_DIR/CSM_LIBRARY are passed
+      # explicitly so find_library cannot pick the 3.1.0 copy out of the active env.
+      - name: Build shared variant against CSM 3.0.3
         if: matrix.python-version == '3.13'
+        shell: pwsh
         run: |
-          mkdir -p build-static
-          cd build-static
-          cmake -G "Visual Studio 17 2022" -DUSGSCSM_BUILD_DOCS=OFF -DCMAKE_WINDOWS_EXPORT_ALL_SYMBOLS=ON -DUSGSCSM_STATIC_CSM=ON -DUSGSCSM_BUILD_TESTS=OFF ..
+          $ErrorActionPreference = 'Stop'
+          $env:CSM303_PREFIX = "$env:RUNNER_TEMP\csm303"
+          conda create -y -p $env:CSM303_PREFIX -c conda-forge "csm=3.0.3.3"
+          if ($LASTEXITCODE -ne 0) { throw "conda create failed" }
+
+          New-Item -ItemType Directory -Force -Path build-shared-303 | Out-Null
+          cd build-shared-303
+          cmake -G "Visual Studio 17 2022" -DUSGSCSM_BUILD_DOCS=OFF -DCMAKE_WINDOWS_EXPORT_ALL_SYMBOLS=ON `
+                -DUSGSCSM_BUILD_TESTS=OFF `
+                -DCSM_INCLUDE_DIR:PATH="$env:CSM303_PREFIX\Library\include" `
+                -DCSM_LIBRARY:FILEPATH="$env:CSM303_PREFIX\Library\lib\csmapi.lib" ..
           cmake --build . --target ALL_BUILD --config Release
+
+      # Static csmapi, one build per API version. USGSCSM_CSM_VERSION downloads the pinned
+      # upstream release; the external/csm submodule only carries 3.0.3-era sources.
+      - name: Build static variants
+        if: matrix.python-version == '3.13'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          foreach ($v in @('3.1.0', '3.0.3')) {
+            New-Item -ItemType Directory -Force -Path "build-static-$v" | Out-Null
+            cmake -S . -B "build-static-$v" -G "Visual Studio 17 2022" `
+                  -DUSGSCSM_BUILD_DOCS=OFF -DCMAKE_WINDOWS_EXPORT_ALL_SYMBOLS=ON `
+                  -DUSGSCSM_BUILD_TESTS=OFF -DUSGSCSM_STATIC_CSM=ON -DUSGSCSM_CSM_VERSION=$v
+            if ($LASTEXITCODE -ne 0) { throw "configure failed for CSM $v" }
+            cmake --build "build-static-$v" --target ALL_BUILD --config Release
+            if ($LASTEXITCODE -ne 0) { throw "build failed for CSM $v" }
+          }
 
       - uses: actions/upload-artifact@c7d193f32edcb7bfad88892161225aeda64e9392
         with:
@@ -102,35 +132,65 @@ jobs:
           $ErrorActionPreference = 'Stop'
           New-Item -ItemType Directory -Force -Path dev-bundle | Out-Null
 
-          # Locate csmapi.dll from the import library the build actually linked against,
-          # rather than guessing at the conda prefix layout.
-          $csmLib = (Select-String -Path build\CMakeCache.txt -Pattern '^CSM_LIBRARY:FILEPATH=' |
-                     Select-Object -First 1).Line -replace '^CSM_LIBRARY:FILEPATH=', ''
-          if (-not $csmLib) { throw "CSM_LIBRARY not found in build\CMakeCache.txt" }
-          $csmDll = Join-Path (Split-Path (Split-Path $csmLib -Parent) -Parent) 'bin\csmapi.dll'
-          Write-Host "csmapi import library: $csmLib"
-          Write-Host "csmapi runtime library: $csmDll"
+          # CMake parses CURRENT_CSM_VERSION out of the csm.h each tree compiled against and
+          # caches it, so a filename here cannot misreport the API baked into the DLL.
+          function Get-CsmVersion($buildDir) {
+            $v = (Select-String -Path "$buildDir\CMakeCache.txt" -Pattern '^USGSCSM_CSM_API_VERSION(:[A-Z]+)?=' |
+                  Select-Object -First 1).Line -replace '^USGSCSM_CSM_API_VERSION(:[A-Z]+)?=', ''
+            if (-not $v) { throw "USGSCSM_CSM_API_VERSION not found in $buildDir\CMakeCache.txt" }
+            $v
+          }
 
-          foreach ($f in @('build\Release\usgscsm.dll', $csmDll,
-                           'build-static\Release\usgscsmstatic.dll')) {
-            if (-not (Test-Path $f)) { throw "Missing expected bundle file: $f" }
-            Copy-Item $f dev-bundle\
+          # Each shared build needs its own csmapi.dll, and that name is fixed by the import
+          # table, so the two cannot share a directory.
+          function Get-CsmDll($buildDir) {
+            $lib = (Select-String -Path "$buildDir\CMakeCache.txt" -Pattern '^CSM_LIBRARY(:[A-Z]+)?=' |
+                    Select-Object -First 1).Line -replace '^CSM_LIBRARY(:[A-Z]+)?=', ''
+            if (-not $lib) { throw "CSM_LIBRARY not found in $buildDir\CMakeCache.txt" }
+            Join-Path (Split-Path (Split-Path $lib -Parent) -Parent) 'bin\csmapi.dll'
+          }
+
+          $manifest = @()
+
+          foreach ($b in @('build', 'build-shared-303')) {
+            $ver = Get-CsmVersion $b
+            $csmDll = Get-CsmDll $b
+            $dest = "dev-bundle\shared-csm$ver"
+            New-Item -ItemType Directory -Force -Path $dest | Out-Null
+            foreach ($f in @("$b\Release\usgscsm.dll", $csmDll)) {
+              if (-not (Test-Path $f)) { throw "Missing expected bundle file: $f" }
+            }
+            Copy-Item "$b\Release\usgscsm.dll" "$dest\usgscsm-csm$ver.dll"
+            Copy-Item $csmDll "$dest\csmapi.dll"
+            $manifest += "shared-csm$ver/usgscsm-csm$ver.dll + csmapi.dll ($b, csmapi from $csmDll)"
+          }
+
+          New-Item -ItemType Directory -Force -Path dev-bundle\static | Out-Null
+          foreach ($v in @('3.1.0', '3.0.3')) {
+            $b = "build-static-$v"
+            $ver = Get-CsmVersion $b
+            if ($ver -ne $v) { throw "$b was built against CSM $ver, expected $v" }
+            $src = "$b\Release\usgscsmstatic.dll"
+            if (-not (Test-Path $src)) { throw "Missing expected bundle file: $src" }
+            Copy-Item $src "dev-bundle\static\usgscsmstatic-csm$ver.dll"
+            $manifest += "static/usgscsmstatic-csm$ver.dll (self-contained)"
           }
 
           @(
             "commit:    ${{ github.sha }}",
             "run:       ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
             "generator: Visual Studio 17 2022 (Release, x64)",
-            "csmapi:    $csmDll",
-            "usgscsm.dll:       shared csmapi, registers with the host's registry",
-            "usgscsmstatic.dll: csmapi linked in, private registry, no csmapi.dll needed"
-          ) | Set-Content dev-bundle\BUILDINFO.txt
+            "",
+            "shared-*: needs the csmapi.dll shipped beside it; registers with a host's registry.",
+            "static/*: csmapi linked in, private registry, no csmapi.dll needed.",
+            ""
+          ) + $manifest | Set-Content dev-bundle\BUILDINFO.txt
 
-          Get-ChildItem dev-bundle | Format-Table Name, Length
+          Get-ChildItem dev-bundle -Recurse -File | Select-Object FullName, Length | Format-Table
 
-      # usgscsm.dll should import csmapi.dll plus system DLLs only; anything else
-      # (ale.dll, proj*.dll, sqlite3.dll) is a dependency that failed to embed. The static
-      # variant must not import csmapi.dll at all -- that is the whole point of it.
+      # Each shared plugin must import csmapi.dll and nothing else third-party (ale.dll,
+      # proj*.dll, sqlite3.dll would mean a dependency failed to embed). Each static plugin
+      # must not import csmapi.dll at all -- that is the whole point of it.
       - name: Check DLL imports
         if: matrix.python-version == '3.13'
         shell: pwsh
@@ -140,12 +200,29 @@ jobs:
           $dumpbin = & $vswhere -latest -find '**\Hostx64\x64\dumpbin.exe' | Select-Object -First 1
           if (-not $dumpbin) { Write-Host "dumpbin not found; skipping"; exit 0 }
 
-          & $dumpbin /dependents dev-bundle\usgscsm.dll
+          # Counted so a glob that matches nothing cannot pass as a clean check.
+          $shared = @(Get-ChildItem dev-bundle\shared-*\usgscsm-*.dll)
+          $static = @(Get-ChildItem dev-bundle\static\usgscsmstatic-*.dll)
+          if ($shared.Count -ne 2 -or $static.Count -ne 2) {
+            throw "expected 2 shared and 2 static plugins, found $($shared.Count) and $($static.Count)"
+          }
 
-          $deps = & $dumpbin /dependents dev-bundle\usgscsmstatic.dll
-          $deps
-          if ($deps -match 'csmapi\.dll') {
-            throw "usgscsmstatic.dll imports csmapi.dll; the static link did not take"
+          foreach ($dll in $shared) {
+            Write-Host "=== $($dll.Name) ==="
+            $deps = & $dumpbin /dependents $dll.FullName
+            $deps
+            if ($deps -notmatch 'csmapi\.dll') {
+              throw "$($dll.Name) does not import csmapi.dll; it is not the shared variant"
+            }
+          }
+
+          foreach ($dll in $static) {
+            Write-Host "=== $($dll.Name) ==="
+            $deps = & $dumpbin /dependents $dll.FullName
+            $deps
+            if ($deps -match 'csmapi\.dll') {
+              throw "$($dll.Name) imports csmapi.dll; the static link did not take"
+            }
           }
 
       - uses: actions/upload-artifact@c7d193f32edcb7bfad88892161225aeda64e9392
@@ -169,8 +246,14 @@ jobs:
           name: usgscsm-dev-win64
           path: dev-bundle
 
+      # Recursive, not -j: the shared variants live in per-version directories because each
+      # needs its own csmapi.dll under that exact name.
       - name: Bundle as zip
-        run: zip -j usgscsm-dev-win64.zip dev-bundle/*
+        run: |
+          cd dev-bundle
+          zip -r ../usgscsm-dev-win64.zip *
+          cd ..
+          unzip -l usgscsm-dev-win64.zip
 
       # Delete and recreate rather than update: `--target` re-points the `dev` tag at this
       # commit, whereas updating an existing release would leave the tag on the old one and
@@ -182,19 +265,23 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           cat > notes.md <<EOF
-          Unsigned Windows x64 development build of main at ${GITHUB_SHA:0:8}. Two variants,
-          differing only in how the CSM API is linked. Both are runtime-loaded plugins, so
-          no import libraries are shipped.
+          Unsigned Windows x64 development build of main at ${GITHUB_SHA:0:8}. Four plugins:
+          two ways of linking the CSM API, each against two CSM API versions. Every name
+          carries the CSM version compiled into it. All are runtime-loaded plugins, so no
+          import libraries are shipped.
 
-          **usgscsm.dll** — needs **csmapi.dll** next to it (or elsewhere on the DLL search
-          path). Use this with a host that has its own csmapi, such as ISIS or ASP: the
-          plugin registers into the host's csm::Plugin registry because both sides share
-          one csmapi. csmapi is the only dependency that is not statically embedded.
+          **Shared csmapi** — \`usgscsm-csm3.1.0.dll\`, \`usgscsm-csm3.0.3.dll\`. Each needs
+          the **csmapi.dll** shipped beside it in the zip; that file name is fixed by the
+          import table, which is why the two live in separate \`shared-csm*\` directories and
+          are not offered as loose downloads. Use these with a host that has its own csmapi,
+          such as ISIS or ASP: the plugin registers into the host's csm::Plugin registry
+          because both sides share one csmapi. Match the version to your host's csmapi.
 
-          **usgscsmstatic.dll** — self-contained, needs no csmapi.dll, and re-exports the
-          CSM API itself. Use this where csmapi.dll cannot be supplied. It carries a private
-          csm::Plugin registry, so it will *not* show up in the registry of a host that
-          links its own csmapi; reach the models through this DLL's own exports.
+          **Static csmapi** — \`usgscsmstatic-csm3.1.0.dll\`, \`usgscsmstatic-csm3.0.3.dll\`.
+          Self-contained, need no csmapi.dll, and re-export the CSM API themselves. Use these
+          where csmapi.dll cannot be supplied. Each carries a private csm::Plugin registry, so
+          it will *not* show up in the registry of a host that links its own csmapi; link the
+          DLL and reach the models through its own exports.
 
           Replaced on every push to main. Built by
           ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
@@ -207,9 +294,8 @@ jobs:
             --title "Development build (main)" \
             --notes-file notes.md \
             usgscsm-dev-win64.zip \
-            dev-bundle/usgscsm.dll \
-            dev-bundle/csmapi.dll \
-            dev-bundle/usgscsmstatic.dll
+            dev-bundle/static/usgscsmstatic-csm3.1.0.dll \
+            dev-bundle/static/usgscsmstatic-csm3.0.3.dll
 
   Build-Docs:
     runs-on: ubuntu-latest
