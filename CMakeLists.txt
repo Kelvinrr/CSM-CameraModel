@@ -885,9 +885,34 @@ target_link_libraries(usgscsm
 # decorations either side of the boundary.
 target_compile_definitions(usgscsm PUBLIC $<$<PLATFORM_ID:Linux>:LINUX_BUILD>)
 
-# PUBLIC: the tools and tests name csm types directly, and every consumer must bind
-# to the same csmapi this plugin does.
-target_link_libraries(usgscsm PUBLIC ${CSM_LIBRARY})
+# Shared csmapi is PUBLIC: the tools and tests name csm types directly, and every consumer
+# must bind to the same csmapi this plugin does.
+#
+# A static csmapi has to stay PRIVATE. The plugin already re-exports every csm symbol
+# (CSM_LIBRARY makes csm.h say dllexport), so propagating the archive would make each tool
+# link both it and the plugin's import library -- two definitions of every csm symbol,
+# which MSVC rejects with LNK2005. Keeping it private also stops the CSM_LIBRARY define
+# from reaching consumers, so their csm.h correctly says dllimport and they bind to the
+# one copy inside the plugin.
+if(USGSCSM_STATIC_CSM AND NOT EMSCRIPTEN)
+  target_link_libraries(usgscsm PRIVATE ${CSM_LIBRARY})
+
+  # The whole archive, not just the objects usgscsm happens to reference: this plugin
+  # advertises the complete CSM API, and without this the linker drops everything else --
+  # csm::Isd, the correlation functions -- leaving consumers and our own tools with
+  # undefined csm symbols.
+  if(MSVC)
+    target_link_options(usgscsm PRIVATE "/WHOLEARCHIVE:$<TARGET_FILE:csmapi>")
+  elseif(APPLE)
+    target_link_options(usgscsm PRIVATE "-Wl,-force_load,$<TARGET_FILE:csmapi>")
+  else()
+    target_link_options(usgscsm PRIVATE
+                        "-Wl,--whole-archive" "$<TARGET_FILE:csmapi>"
+                        "-Wl,--no-whole-archive")
+  endif()
+else()
+  target_link_libraries(usgscsm PUBLIC ${CSM_LIBRARY})
+endif()
 
 if(APPLE)
   set(USGSCSM_TOOL_ORIGIN "@loader_path")
